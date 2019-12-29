@@ -75,7 +75,7 @@ module Stdenv
   def macosxsdk(version = MacOS.version)
     # Sets all needed lib and include dirs to CFLAGS, CPPFLAGS, LDFLAGS.
     remove_macosxsdk
-    version = version.to_s
+    version = ENV["HOMEBREW_MACOSX_DEPLOYMENT_TARGET"] || version.to_s
     append_to_cflags("-mmacosx-version-min=#{version}")
     self["CPATH"] = "#{HOMEBREW_PREFIX}/include"
     prepend "LDFLAGS", "-L#{HOMEBREW_PREFIX}/lib"
