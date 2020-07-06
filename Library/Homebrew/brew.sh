@@ -119,7 +119,7 @@ fi
 
 if [[ -n "$HOMEBREW_MACOS" ]]
 then
-  HOMEBREW_PROCESSOR="$(uname -p)"
+  HOMEBREW_PROCESSOR="${HOMEBREW_PROCESSOR:-$(uname -p)}"
   HOMEBREW_PRODUCT="Homebrew"
   HOMEBREW_SYSTEM="Macintosh"
   # This is i386 even on x86_64 machines
