@@ -124,7 +124,7 @@ then
   HOMEBREW_SYSTEM="Macintosh"
   # This is i386 even on x86_64 machines
   [[ "$HOMEBREW_PROCESSOR" = "i386" ]] && HOMEBREW_PROCESSOR="Intel"
-  HOMEBREW_MACOS_VERSION="$(/usr/bin/sw_vers -productVersion)"
+  HOMEBREW_MACOS_VERSION="${HOMEBREW_MACOSX_DEPLOYMENT_TARGET:-$(/usr/bin/sw_vers -productVersion)}"
   HOMEBREW_OS_VERSION="macOS $HOMEBREW_MACOS_VERSION"
   # Don't change this from Mac OS X to match what macOS itself does in Safari on 10.12
   HOMEBREW_OS_USER_AGENT_VERSION="Mac OS X $HOMEBREW_MACOS_VERSION"
