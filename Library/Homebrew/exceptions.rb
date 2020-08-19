@@ -7,6 +7,8 @@ class UsageError < RuntimeError
   attr_reader :reason
 
   def initialize(reason = nil)
+    super
+
     @reason = reason
   end
 
@@ -63,6 +65,8 @@ class FormulaUnavailableError < RuntimeError
   attr_accessor :dependent
 
   def initialize(name)
+    super
+
     @name = name
   end
 
@@ -247,17 +251,6 @@ class TapAlreadyTappedError < RuntimeError
   end
 end
 
-class TapPinStatusError < RuntimeError
-  attr_reader :name, :pinned
-
-  def initialize(name, pinned)
-    @name = name
-    @pinned = pinned
-
-    super pinned ? "#{name} is already pinned." : "#{name} is already unpinned."
-  end
-end
-
 class OperationInProgressError < RuntimeError
   def initialize(name)
     message = <<~EOS
@@ -320,6 +313,18 @@ class FormulaConflictError < RuntimeError
   end
 end
 
+class FormulaUnknownPythonError < RuntimeError
+  def initialize(formula)
+    super <<~EOS
+      The version of Python to use with the virtualenv in the `#{formula.full_name}` formula
+      cannot be guessed automatically because a recognised Python dependency could not be found.
+
+      If you are using a non-standard Python depedency, please add `:using => "python@x.y"` to
+      `virtualenv_install_with_resources` to resolve the issue manually.
+    EOS
+  end
+end
+
 class FormulaAmbiguousPythonError < RuntimeError
   def initialize(formula)
     super <<~EOS
@@ -355,10 +360,10 @@ class BuildError < RuntimeError
     []
   end
 
-  def dump
+  def dump(verbose: false)
     puts
 
-    if Homebrew.args.verbose?
+    if verbose
       require "system_config"
       require "build_environment"
 
@@ -368,7 +373,7 @@ class BuildError < RuntimeError
       ohai "Configuration"
       SystemConfig.dump_verbose_config
       ohai "ENV"
-      Homebrew.dump_build_env(env)
+      BuildEnvironment.dump env
       puts
       onoe "#{formula.full_name} #{formula.version} did not build"
       unless (logs = Dir["#{formula.logs}/*"]).empty?
@@ -494,7 +499,7 @@ class CurlDownloadStrategyError < RuntimeError
   end
 end
 
-# Raised by {#safe_system} in `utils.rb`.
+# Raised by {Kernel#safe_system} in `utils.rb`.
 class ErrorDuringExecution < RuntimeError
   attr_reader :cmd, :status, :output
 
@@ -512,7 +517,7 @@ class ErrorDuringExecution < RuntimeError
     redacted_cmd = redact_secrets(cmd.shelljoin.gsub('\=', "="), secrets)
     s = +"Failure while executing; `#{redacted_cmd}` exited with #{exitstatus}."
 
-    unless [*output].empty?
+    if Array(output).present?
       format_output_line = lambda do |type_line|
         type, line = *type_line
         if type == :stderr
@@ -531,7 +536,7 @@ class ErrorDuringExecution < RuntimeError
   end
 
   def stderr
-    [*output].select { |type,| type == :stderr }.map(&:last).join
+    Array(output).select { |type,| type == :stderr }.map(&:last).join
   end
 end
 

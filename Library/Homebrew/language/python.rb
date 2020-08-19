@@ -180,8 +180,9 @@ module Language
       def virtualenv_install_with_resources(options = {})
         python = options[:using]
         if python.nil?
-          pythons = %w[python python3 python@3 python@3.8 pypy pypy3]
+          pythons = %w[python python3 python@3 python@3.7 python@3.8 pypy pypy3]
           wanted = pythons.select { |py| needs_python?(py) }
+          raise FormulaUnknownPythonError, self if wanted.empty?
           raise FormulaAmbiguousPythonError, self if wanted.size > 1
 
           python = wanted.first
@@ -261,7 +262,7 @@ module Language
         #   the contents of a `requirements.txt`.
         # @return [void]
         def pip_install(targets)
-          targets = [targets] unless targets.is_a? Array
+          targets = Array(targets)
           targets.each do |t|
             if t.respond_to? :stage
               next if t.name == "homebrew-virtualenv"
@@ -291,7 +292,7 @@ module Language
         private
 
         def do_install(targets)
-          targets = [targets] unless targets.is_a? Array
+          targets = Array(targets)
           @formula.system @venv_root/"bin/pip", "install",
                           "-v", "--no-deps", "--no-binary", ":all:",
                           "--ignore-installed", *targets

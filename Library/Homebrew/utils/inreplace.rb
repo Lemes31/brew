@@ -11,6 +11,8 @@ module Utils
   end
 
   module Inreplace
+    module_function
+
     # Sometimes we have to change a bit before we install. Mostly we
     # prefer a patch but if you need the `prefix` of this formula in the
     # patch you have to resort to `inreplace`, because in the patch
@@ -19,13 +21,14 @@ module Utils
     #
     # `inreplace` supports regular expressions:
     # <pre>inreplace "somefile.cfg", /look[for]what?/, "replace by #{bin}/tool"</pre>
-    def inreplace(paths, before = nil, after = nil, audit_result = true)
+    def inreplace(paths, before = nil, after = nil, audit_result = true) # rubocop:disable Style/OptionalBooleanParameter
       errors = {}
 
       errors["`paths` (first) parameter"] = ["`paths` was empty"] if paths.blank?
 
       Array(paths).each do |path|
-        s = File.open(path, "rb", &:read).extend(StringInreplaceExtension)
+        str = File.open(path, "rb", &:read) || ""
+        s = StringInreplaceExtension.new(str)
 
         if before.nil? && after.nil?
           yield s
@@ -36,11 +39,28 @@ module Utils
 
         errors[path] = s.errors unless s.errors.empty?
 
-        Pathname(path).atomic_write(s)
+        Pathname(path).atomic_write(s.inreplace_string)
       end
 
       raise InreplaceError, errors unless errors.empty?
     end
-    module_function :inreplace
+
+    def inreplace_pairs(path, replacement_pairs, read_only_run: false, silent: false)
+      str = File.open(path, "rb", &:read)
+      contents = StringInreplaceExtension.new(str)
+      replacement_pairs.each do |old, new|
+        ohai "replace #{old.inspect} with #{new.inspect}" unless silent
+        unless old
+          contents.errors << "No old value for new value #{new}! Did you pass the wrong arguments?"
+          next
+        end
+
+        contents.gsub!(old, new)
+      end
+      raise InreplaceError, path => contents.errors unless contents.errors.empty?
+
+      Pathname(path).atomic_write(contents.inreplace_string) unless read_only_run
+      contents.inreplace_string
+    end
   end
 end

@@ -42,7 +42,7 @@ module OS
     end
 
     def languages
-      @languages ||= [*ENV["LANG"]&.slice(/[a-z]+/)].uniq
+      @languages ||= Array(ENV["LANG"]&.slice(/[a-z]+/)).uniq
     end
 
     def language
@@ -54,6 +54,10 @@ module OS
     end
 
     def sdk_path_if_needed(_v = nil)
+      nil
+    end
+
+    def sdk_path
       nil
     end
 

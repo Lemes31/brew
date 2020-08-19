@@ -22,8 +22,7 @@ describe "brew outdated", :integration_test do
     ].to_json
 
     expect { brew "outdated", "--json=v1" }
-      .to output(expected_json + "\n").to_stdout
-      .and not_to_output.to_stderr
+      .to output("#{expected_json}\n").to_stdout
       .and be_a_success
   end
 end

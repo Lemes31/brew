@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "cask/utils"
+
 module Cask
   class DSL
     class Base
@@ -28,7 +30,7 @@ module Cask
       end
 
       def respond_to_missing?(*)
-        true
+        super || true
       end
     end
   end

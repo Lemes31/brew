@@ -13,17 +13,15 @@ gem "rspec-retry", require: false
 gem "rspec-wait", require: false
 gem "rubocop"
 gem "simplecov", require: false
-if ENV["HOMEBREW_SORBET"]
-  gem "sorbet"
-  gem "sorbet-runtime"
-  gem "tapioca"
-end
+gem "sorbet"
+gem "sorbet-runtime"
+gem "tapioca"
 
 # vendored gems
 gem "activesupport"
 gem "concurrent-ruby"
 gem "mechanize"
-gem "patchelf" if ENV["HOMEBREW_PATCHELF_RB"]
+gem "patchelf"
 gem "plist"
 gem "rubocop-performance"
 gem "rubocop-rspec"

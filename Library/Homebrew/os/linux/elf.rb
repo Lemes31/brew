@@ -68,39 +68,22 @@ module ELFShim
     elf_type == :executable
   end
 
+  def rpath
+    return @rpath if defined? @rpath
+
+    @rpath = rpath_using_patchelf_rb
+  end
+
   def interpreter
     return @interpreter if defined? @interpreter
 
-    @interpreter = if HOMEBREW_PATCHELF_RB
-      begin
-        patchelf_patcher.interpreter
-      rescue PatchELF::PatchError => e
-        opoo e unless e.to_s.start_with? "No interpreter found"
-        nil
-      end
-    elsif (patchelf = DevelopmentTools.locate "patchelf")
-      interp = Utils.popen_read(patchelf, "--print-interpreter", to_s, err: :out).strip
-      $CHILD_STATUS.success? ? interp : nil
-    elsif (file = DevelopmentTools.locate("file"))
-      output = Utils.popen_read(file, "-L", "-b", to_s, err: :out).strip
-      output[/^ELF.*, interpreter (.+?), /, 1]
-    else
-      raise "Please install either patchelf or file."
-    end
+    @interpreter = patchelf_patcher.interpreter
   end
 
   def dynamic_elf?
     return @dynamic_elf if defined? @dynamic_elf
 
-    @dynamic_elf = if HOMEBREW_PATCHELF_RB
-      patchelf_patcher.instance_variable_get(:@elf).segment_by_type(:DYNAMIC).present?
-    elsif which "readelf"
-      Utils.popen_read("readelf", "-l", to_path).include?(" DYNAMIC ")
-    elsif which "file"
-      !Utils.popen_read("file", "-L", "-b", to_path)[/dynamic|shared/].nil?
-    else
-      raise "Please install either readelf (from binutils) or file."
-    end
+    @dynamic_elf = patchelf_patcher.elf.segment_by_type(:DYNAMIC).present?
   end
 
   class Metadata
@@ -132,80 +115,24 @@ module ELFShim
     private
 
     def needed_libraries(path)
-      if HOMEBREW_PATCHELF_RB
-        needed_libraries_using_patchelf_rb path
-      elsif DevelopmentTools.locate "readelf"
-        needed_libraries_using_readelf path
-      elsif DevelopmentTools.locate "patchelf"
-        needed_libraries_using_patchelf path
-      else
-        return [nil, []] if path.basename.to_s == "patchelf"
+      return [nil, []] unless path.dynamic_elf?
 
-        raise "patchelf must be installed: brew install patchelf"
-      end
+      needed_libraries_using_patchelf_rb path
     end
 
     def needed_libraries_using_patchelf_rb(path)
       patcher = path.patchelf_patcher
-      return [nil, []] unless patcher
-
-      soname = begin
-        patcher.soname
-      rescue PatchELF::PatchError => e
-        opoo e unless e.to_s.start_with? "Entry DT_SONAME not found, not a shared library?"
-        nil
-      end
-      needed = begin
-        patcher.needed
-      rescue PatchELF::PatchError => e
-        opoo e
-        []
-      end
-      [soname, needed]
-    end
-
-    def needed_libraries_using_patchelf(path)
-      return [nil, []] unless path.dynamic_elf?
-
-      patchelf = DevelopmentTools.locate "patchelf"
-      if path.dylib?
-        command = [patchelf, "--print-soname", path.expand_path.to_s]
-        soname = Utils.safe_popen_read(*command).chomp
-      end
-      command = [patchelf, "--print-needed", path.expand_path.to_s]
-      needed = Utils.safe_popen_read(*command).split("\n")
-      [soname, needed]
-    end
-
-    def needed_libraries_using_readelf(path)
-      soname = nil
-      needed = []
-      command = ["readelf", "-d", path.expand_path.to_s]
-      lines = Utils.popen_read(*command, err: :out).split("\n")
-      lines.each do |s|
-        next if s.start_with?("readelf: Warning: possibly corrupt ELF header")
-
-        filename = s[/\[(.*)\]/, 1]
-        next if filename.nil?
-
-        if s.include? "(SONAME)"
-          soname = filename
-        elsif s.include? "(NEEDED)"
-          needed << filename
-        end
-      end
-      [soname, needed]
+      [patcher.soname, patcher.needed]
     end
   end
 
-  def patchelf_patcher
-    return unless HOMEBREW_PATCHELF_RB
+  def rpath_using_patchelf_rb
+    patchelf_patcher.runpath || patchelf_patcher.rpath
+  end
 
-    @patchelf_patcher ||= begin
-      Homebrew.install_bundler_gems!
-      require "patchelf"
-      PatchELF::Patcher.new to_s, logging: false
-    end
+  def patchelf_patcher
+    require "patchelf"
+    @patchelf_patcher ||= PatchELF::Patcher.new to_s, on_error: :silent
   end
 
   def metadata

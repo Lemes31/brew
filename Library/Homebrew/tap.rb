@@ -234,9 +234,10 @@ class Tap
     require "descriptions"
 
     if official? && DEPRECATED_OFFICIAL_TAPS.include?(repo)
-      odie "#{name} was deprecated. This tap is now empty as all its formulae were migrated."
+      odie "#{name} was deprecated. This tap is now empty and all its contents were either deleted or migrated."
     elsif user == "caskroom"
-      odie "#{name} was moved. Tap homebrew/cask-#{repo} instead."
+      new_repo = repo == "cask" ? "cask" : "cask-#{repo}"
+      odie "#{name} was moved. Tap homebrew/#{new_repo} instead."
     end
 
     requested_remote = clone_target || default_remote
@@ -500,26 +501,6 @@ class Tap
     @pinned = pinned_symlink_path.directory?
   end
 
-  # Pin this {Tap}.
-  def pin
-    raise TapUnavailableError, name unless installed?
-    raise TapPinStatusError.new(name, true) if pinned?
-
-    pinned_symlink_path.make_relative_symlink(path)
-    @pinned = true
-  end
-
-  # Unpin this {Tap}.
-  def unpin
-    raise TapUnavailableError, name unless installed?
-    raise TapPinStatusError.new(name, false) unless pinned?
-
-    pinned_symlink_path.delete
-    pinned_symlink_path.parent.rmdir_if_possible
-    pinned_symlink_path.parent.parent.rmdir_if_possible
-    @pinned = false
-  end
-
   def to_hash
     hash = {
       "name"          => name,
@@ -533,7 +514,6 @@ class Tap
       "cask_tokens"   => cask_tokens,
       "cask_files"    => cask_files.map(&:to_s),
       "command_files" => command_files.map(&:to_s),
-      "pinned"        => pinned?,
     }
 
     if installed?

@@ -15,14 +15,16 @@ describe Cask::Cmd::Style, :cask do
 
     around do |example|
       FileUtils.ln_s HOMEBREW_LIBRARY_PATH, HOMEBREW_LIBRARY/"Homebrew"
+      FileUtils.ln_s HOMEBREW_LIBRARY_PATH.parent/".rubocop.yml", HOMEBREW_LIBRARY/".rubocop.yml"
       FileUtils.ln_s HOMEBREW_LIBRARY_PATH.parent/".rubocop_cask.yml", HOMEBREW_LIBRARY/".rubocop_cask.yml"
-      FileUtils.ln_s HOMEBREW_LIBRARY_PATH.parent/".rubocop_shared.yml", HOMEBREW_LIBRARY/".rubocop_shared.yml"
+      FileUtils.ln_s HOMEBREW_LIBRARY_PATH.parent/".rubocop_rspec.yml", HOMEBREW_LIBRARY/".rubocop_rspec.yml"
 
       example.run
     ensure
       FileUtils.rm_f HOMEBREW_LIBRARY/"Homebrew"
+      FileUtils.rm_f HOMEBREW_LIBRARY/".rubocop.yml"
       FileUtils.rm_f HOMEBREW_LIBRARY/".rubocop_cask.yml"
-      FileUtils.rm_f HOMEBREW_LIBRARY/".rubocop_shared.yml"
+      FileUtils.rm_f HOMEBREW_LIBRARY/".rubocop_rspec.yml"
     end
 
     before do
@@ -44,7 +46,7 @@ describe Cask::Cmd::Style, :cask do
     subject { cli.cask_paths }
 
     before do
-      allow(cli).to receive(:args).and_return(tokens)
+      allow(cli).to receive(:args).and_return(instance_double(Homebrew::CLI::Args, named: tokens))
     end
 
     context "when no cask tokens are given" do
