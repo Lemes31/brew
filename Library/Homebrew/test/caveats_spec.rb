@@ -5,17 +5,17 @@ require "formula"
 require "caveats"
 
 describe Caveats do
-  subject { described_class.new(f) }
+  subject(:caveats) { described_class.new(f) }
 
   let(:f) { formula { url "foo-1.0" } }
 
   specify "#f" do
-    expect(subject.f).to eq(f)
+    expect(caveats.f).to eq(f)
   end
 
   describe "#empty?" do
     it "returns true if the Formula has no caveats" do
-      expect(subject).to be_empty
+      expect(caveats).to be_empty
     end
 
     it "returns false if the Formula has caveats" do
@@ -176,7 +176,7 @@ describe Caveats do
       end
     end
 
-    context "shell completions" do
+    describe "shell completions" do
       let(:f) {
         formula do
           url "foo-1.0"
@@ -188,9 +188,11 @@ describe Caveats do
       before do
         allow_any_instance_of(Pathname).to receive(:children).and_return([Pathname.new("child")])
         allow_any_instance_of(Object).to receive(:which).with(any_args).and_return(Pathname.new("shell"))
+        allow(Utils::Shell).to receive(:preferred).and_return(nil)
+        allow(Utils::Shell).to receive(:parent).and_return(nil)
       end
 
-      it "gives dir where bash completions have been installed" do
+      it "gives dir where Bash completions have been installed" do
         (path/"etc/bash_completion.d").mkpath
         expect(caveats).to include(HOMEBREW_PREFIX/"etc/bash_completion.d")
       end

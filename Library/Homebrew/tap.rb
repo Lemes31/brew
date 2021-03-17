@@ -2,19 +2,37 @@
 # frozen_string_literal: true
 
 require "commands"
+require "completions"
 require "extend/cachable"
 require "description_cache_store"
+require "settings"
 
 # A {Tap} is used to extend the formulae provided by Homebrew core.
-# Usually, it's synced with a remote git repository. And it's likely
+# Usually, it's synced with a remote Git repository. And it's likely
 # a GitHub repository with the name of `user/homebrew-repo`. In such
-# case, `user/repo` will be used as the {#name} of this {Tap}, where
-# {#user} represents GitHub username and {#repo} represents repository
-# name without leading `homebrew-`.
+# cases, `user/repo` will be used as the {#name} of this {Tap}, where
+# {#user} represents the GitHub username and {#repo} represents the repository
+# name without the leading `homebrew-`.
 class Tap
+  extend T::Sig
+
   extend Cachable
 
   TAP_DIRECTORY = (HOMEBREW_LIBRARY/"Taps").freeze
+
+  HOMEBREW_TAP_FORMULA_RENAMES_FILE = "formula_renames.json"
+  HOMEBREW_TAP_MIGRATIONS_FILE = "tap_migrations.json"
+  HOMEBREW_TAP_AUDIT_EXCEPTIONS_DIR = "audit_exceptions"
+  HOMEBREW_TAP_STYLE_EXCEPTIONS_DIR = "style_exceptions"
+  HOMEBREW_TAP_PYPI_FORMULA_MAPPINGS = "pypi_formula_mappings.json"
+
+  HOMEBREW_TAP_JSON_FILES = %W[
+    #{HOMEBREW_TAP_FORMULA_RENAMES_FILE}
+    #{HOMEBREW_TAP_MIGRATIONS_FILE}
+    #{HOMEBREW_TAP_AUDIT_EXCEPTIONS_DIR}/*.json
+    #{HOMEBREW_TAP_STYLE_EXCEPTIONS_DIR}/*.json
+    #{HOMEBREW_TAP_PYPI_FORMULA_MAPPINGS}
+  ].freeze
 
   def self.fetch(*args)
     case args.length
@@ -44,8 +62,14 @@ class Tap
     fetch(match[:user], match[:repo])
   end
 
+  sig { returns(T.attached_class) }
   def self.default_cask_tap
     @default_cask_tap ||= fetch("Homebrew", "cask")
+  end
+
+  sig { params(force: T::Boolean).returns(T::Boolean) }
+  def self.install_default_cask_tap_if_necessary(force: false)
+    false
   end
 
   extend Enumerable
@@ -54,7 +78,7 @@ class Tap
   # this {Tap}'s remote repository.
   attr_reader :user
 
-  # The repository name of this {Tap} without leading `homebrew-`.
+  # The repository name of this {Tap} without the leading `homebrew-`.
   attr_reader :repo
 
   # The name of this {Tap}. It combines {#user} and {#repo} with a slash.
@@ -83,7 +107,7 @@ class Tap
     @alias_reverse_table = nil
   end
 
-  # Clear internal cache
+  # Clear internal cache.
   def clear_cache
     @remote = nil
     @repo_var = nil
@@ -99,6 +123,9 @@ class Tap
     @command_files = nil
     @formula_renames = nil
     @tap_migrations = nil
+    @audit_exceptions = nil
+    @style_exceptions = nil
+    @pypi_formula_mappings = nil
     @config = nil
     remove_instance_variable(:@private) if instance_variable_defined?(:@private)
   end
@@ -112,6 +139,7 @@ class Tap
   end
 
   # The default remote path to this {Tap}.
+  sig { returns(String) }
   def default_remote
     "https://github.com/#{full_name}"
   end
@@ -123,7 +151,7 @@ class Tap
                       .upcase
   end
 
-  # True if this {Tap} is a git repository.
+  # True if this {Tap} is a Git repository.
   def git?
     path.git?
   end
@@ -142,46 +170,24 @@ class Tap
     path.git_head
   end
 
-  # git HEAD in short format for this {Tap}.
-  def git_short_head
-    raise TapUnavailableError, name unless installed?
-
-    path.git_short_head
-  end
-
-  # Time since git last commit for this {Tap}.
+  # Time since last git commit for this {Tap}.
   def git_last_commit
     raise TapUnavailableError, name unless installed?
 
     path.git_last_commit
   end
 
-  # git last commit date for this {Tap}.
-  def git_last_commit_date
-    raise TapUnavailableError, name unless installed?
-
-    path.git_last_commit_date
-  end
-
   # The issues URL of this {Tap}.
   # e.g. `https://github.com/user/homebrew-repo/issues`
+  sig { returns(T.nilable(String)) }
   def issues_url
-    return unless official? || !custom_remote?
+    return if !official? && custom_remote?
 
     "#{default_remote}/issues"
   end
 
   def to_s
     name
-  end
-
-  def version_string
-    return "N/A" unless installed?
-
-    pretty_revision = git_short_head
-    return "(no git repository)" unless pretty_revision
-
-    "(git revision #{pretty_revision}; last commit #{git_last_commit_date})"
   end
 
   # True if this {Tap} is an official Homebrew tap.
@@ -196,7 +202,7 @@ class Tap
     @private = read_or_set_private_config
   end
 
-  # {TapConfig} of this {Tap}
+  # {TapConfig} of this {Tap}.
   def config
     @config ||= begin
       raise TapUnavailableError, name unless installed?
@@ -216,6 +222,7 @@ class Tap
   end
 
   # @private
+  sig { returns(T::Boolean) }
   def core_tap?
     false
   end
@@ -265,6 +272,10 @@ class Tap
 
     $stderr.ohai "Tapping #{name}" unless quiet
     args =  %W[clone #{requested_remote} #{path}]
+
+    # Override possible user configs like:
+    #   git config --global clone.defaultRemoteName notorigin
+    args << "--origin=origin"
     args << "--depth=1" unless full_clone
     args << "-q" if quiet
 
@@ -295,6 +306,17 @@ class Tap
                            .update_from_formula_names!(formula_names)
     end
 
+    if official?
+      untapped = self.class.untapped_official_taps
+      untapped -= [name]
+
+      if untapped.empty?
+        Homebrew::Settings.delete :untapped
+      else
+        Homebrew::Settings.write :untapped, untapped.join(";")
+      end
+    end
+
     return if clone_target
     return unless private?
     return if quiet
@@ -311,11 +333,33 @@ class Tap
   def link_completions_and_manpages
     command = "brew tap --repair"
     Utils::Link.link_manpages(path, command)
-    Utils::Link.link_completions(path, command)
+
+    Homebrew::Completions.show_completions_message_if_needed
+    if official? || Homebrew::Completions.link_completions?
+      Utils::Link.link_completions(path, command)
+    else
+      Utils::Link.unlink_completions(path)
+    end
+  end
+
+  def fix_remote_configuration
+    return unless remote.include? "github.com"
+
+    current_upstream_head = path.git_origin_branch
+    return if path.git_origin_has_branch? current_upstream_head
+
+    safe_system "git", "-C", path, "fetch", "origin"
+    path.git_origin_set_head_auto
+
+    new_upstream_head = path.git_origin_branch
+    path.git_rename_branch old: current_upstream_head, new: new_upstream_head
+    path.git_branch_set_upstream local: new_upstream_head, origin: new_upstream_head
+
+    ohai "#{name}: changed default branch name from #{current_upstream_head} to #{new_upstream_head}!"
   end
 
   # Uninstall this {Tap}.
-  def uninstall
+  def uninstall(manual: false)
     require "descriptions"
     raise TapUnavailableError, name unless installed?
 
@@ -337,6 +381,14 @@ class Tap
 
     Commands.rebuild_commands_completion_list
     clear_cache
+
+    return if !manual || !official?
+
+    untapped = self.class.untapped_official_taps
+    return if untapped.include? name
+
+    untapped << name
+    Homebrew::Settings.write :untapped, untapped.join(";")
   end
 
   # True if the {#remote} of {Tap} is customized.
@@ -523,26 +575,40 @@ class Tap
     hash
   end
 
-  # Hash with tap formula renames
+  # Hash with tap formula renames.
   def formula_renames
-    require "json"
-
-    @formula_renames ||= if (rename_file = path/"formula_renames.json").file?
+    @formula_renames ||= if (rename_file = path/HOMEBREW_TAP_FORMULA_RENAMES_FILE).file?
       JSON.parse(rename_file.read)
     else
       {}
     end
   end
 
-  # Hash with tap migrations
+  # Hash with tap migrations.
   def tap_migrations
-    require "json"
-
-    @tap_migrations ||= if (migration_file = path/"tap_migrations.json").file?
+    @tap_migrations ||= if (migration_file = path/HOMEBREW_TAP_MIGRATIONS_FILE).file?
       JSON.parse(migration_file.read)
     else
       {}
     end
+  end
+
+  # Hash with audit exceptions
+  sig { returns(Hash) }
+  def audit_exceptions
+    @audit_exceptions = read_formula_list_directory "#{HOMEBREW_TAP_AUDIT_EXCEPTIONS_DIR}/*"
+  end
+
+  # Hash with style exceptions
+  sig { returns(Hash) }
+  def style_exceptions
+    @style_exceptions = read_formula_list_directory "#{HOMEBREW_TAP_STYLE_EXCEPTIONS_DIR}/*"
+  end
+
+  # Hash with pypi formula mappings
+  sig { returns(Hash) }
+  def pypi_formula_mappings
+    @pypi_formula_mappings = read_formula_list path/HOMEBREW_TAP_PYPI_FORMULA_MAPPINGS
   end
 
   def ==(other)
@@ -553,7 +619,7 @@ class Tap
   def self.each(&block)
     return unless TAP_DIRECTORY.directory?
 
-    return to_enum unless block_given?
+    return to_enum unless block
 
     TAP_DIRECTORY.subdirs.each do |user|
       user.subdirs.each do |repo|
@@ -567,9 +633,16 @@ class Tap
     map(&:name).sort
   end
 
-  # An array of all tap cmd directory {Pathname}s
+  # An array of all tap cmd directory {Pathname}s.
+  sig { returns(T::Array[Pathname]) }
   def self.cmd_directories
     Pathname.glob TAP_DIRECTORY/"*/*/cmd"
+  end
+
+  # An array of official taps that have been manually untapped
+  sig { returns(T::Array[String]) }
+  def self.untapped_official_taps
+    Homebrew::Settings.read(:untapped)&.split(";") || []
   end
 
   # @private
@@ -595,18 +668,47 @@ class Tap
         else
           GitHub.private_repo?(full_name)
         end
-      rescue GitHub::HTTPNotFoundError
+      rescue GitHub::API::HTTPNotFoundError
         true
-      rescue GitHub::Error
+      rescue GitHub::API::Error
         false
       end
     end
+  end
+
+  sig { params(file: Pathname).returns(T.any(T::Array[String], Hash)) }
+  def read_formula_list(file)
+    JSON.parse file.read
+  rescue JSON::ParserError
+    opoo "#{file} contains invalid JSON"
+    {}
+  rescue Errno::ENOENT
+    {}
+  end
+
+  sig { params(directory: String).returns(Hash) }
+  def read_formula_list_directory(directory)
+    list = {}
+
+    Pathname.glob(path/directory).each do |exception_file|
+      list_name = exception_file.basename.to_s.chomp(".json").to_sym
+      list_contents = read_formula_list exception_file
+
+      next if list_contents.blank?
+
+      list[list_name] = list_contents
+    end
+
+    list
   end
 end
 
 # A specialized {Tap} class for the core formulae.
 class CoreTap < Tap
+  extend T::Sig
+
   # @private
+  sig { void }
   def initialize
     super "Homebrew", "core"
   end
@@ -633,26 +735,31 @@ class CoreTap < Tap
   end
 
   # @private
+  sig { void }
   def uninstall
     raise "Tap#uninstall is not available for CoreTap"
   end
 
   # @private
+  sig { void }
   def pin
     raise "Tap#pin is not available for CoreTap"
   end
 
   # @private
+  sig { void }
   def unpin
     raise "Tap#unpin is not available for CoreTap"
   end
 
   # @private
+  sig { returns(T::Boolean) }
   def pinned?
     false
   end
 
   # @private
+  sig { returns(T::Boolean) }
   def core_tap?
     true
   end
@@ -690,6 +797,30 @@ class CoreTap < Tap
   end
 
   # @private
+  def audit_exceptions
+    @audit_exceptions ||= begin
+      self.class.ensure_installed!
+      super
+    end
+  end
+
+  # @private
+  def style_exceptions
+    @style_exceptions ||= begin
+      self.class.ensure_installed!
+      super
+    end
+  end
+
+  # @private
+  def pypi_formula_mappings
+    @pypi_formula_mappings ||= begin
+      self.class.ensure_installed!
+      super
+    end
+  end
+
+  # @private
   def formula_file_to_name(file)
     file.basename(".rb").to_s
   end
@@ -712,18 +843,14 @@ class TapConfig
     return unless tap.git?
     return unless Utils::Git.available?
 
-    tap.path.cd do
-      Utils.popen_read("git", "config", "--get", "homebrew.#{key}").chomp.presence
-    end
+    Homebrew::Settings.read key, repo: tap.path
   end
 
   def []=(key, value)
     return unless tap.git?
     return unless Utils::Git.available?
 
-    tap.path.cd do
-      safe_system "git", "config", "--replace-all", "homebrew.#{key}", value.to_s
-    end
+    Homebrew::Settings.write key, value.to_s, repo: tap.path
   end
 end
 

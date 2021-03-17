@@ -7,10 +7,18 @@ require "requirement"
 #
 # @api private
 class TuntapRequirement < Requirement
+  extend T::Sig
+
+  def initialize(tags = [])
+    odisabled "depends_on :tuntap"
+    super(tags)
+  end
+
   fatal true
   cask "tuntap"
   satisfy(build_env: false) { self.class.binary_tuntap_installed? }
 
+  sig { returns(T::Boolean) }
   def self.binary_tuntap_installed?
     %w[
       /Library/Extensions/tun.kext

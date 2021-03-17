@@ -3,7 +3,12 @@
 
 require_relative "load_path"
 
+require "active_support/core_ext/array/conversions"
+
+require "utils/sorbet"
+
 require "rubocop-performance"
+require "rubocop-rails"
 require "rubocop-rspec"
 require "rubocop-sorbet"
 
@@ -27,5 +32,6 @@ require "rubocops/files"
 require "rubocops/keg_only"
 require "rubocops/version"
 require "rubocops/deprecate_disable"
+require "rubocops/bottle"
 
 require "rubocops/rubocop-cask"

@@ -12,6 +12,8 @@ require "system_command"
 # @api private
 module SystemConfig
   class << self
+    extend T::Sig
+
     include SystemCommand::Mixin
 
     def clang
@@ -30,34 +32,42 @@ module SystemConfig
       end
     end
 
+    sig { returns(String) }
     def head
       HOMEBREW_REPOSITORY.git_head || "(none)"
     end
 
+    sig { returns(String) }
     def last_commit
       HOMEBREW_REPOSITORY.git_last_commit || "never"
     end
 
+    sig { returns(String) }
     def origin
       HOMEBREW_REPOSITORY.git_origin || "(none)"
     end
 
+    sig { returns(String) }
     def core_tap_head
       CoreTap.instance.git_head || "(none)"
     end
 
+    sig { returns(String) }
     def core_tap_last_commit
       CoreTap.instance.git_last_commit || "never"
     end
 
+    sig { returns(String) }
     def core_tap_branch
       CoreTap.instance.git_branch || "(none)"
     end
 
+    sig { returns(String) }
     def core_tap_origin
       CoreTap.instance.remote || "(none)"
     end
 
+    sig { returns(String) }
     def describe_clang
       return "N/A" if clang.null?
 
@@ -76,6 +86,7 @@ module SystemConfig
       end
     end
 
+    sig { returns(String) }
     def describe_homebrew_ruby_version
       case RUBY_VERSION
       when /^1\.[89]/, /^2\.0/
@@ -85,37 +96,33 @@ module SystemConfig
       end
     end
 
+    sig { returns(String) }
     def describe_homebrew_ruby
       "#{describe_homebrew_ruby_version} => #{RUBY_PATH}"
     end
 
+    sig { returns(T.nilable(String)) }
     def hardware
       return if Hardware::CPU.type == :dunno
 
       "CPU: #{Hardware.cores_as_words}-core #{Hardware::CPU.bits}-bit #{Hardware::CPU.family}"
     end
 
+    sig { returns(String) }
     def kernel
       `uname -m`.chomp
     end
 
-    def describe_java
-      return "N/A" unless which "java"
-
-      _, err, status = system_command("java", args: ["-version"], print_stderr: false)
-      return "N/A" unless status.success?
-
-      err[/java version "([\d._]+)"/, 1] || "N/A"
-    end
-
+    sig { returns(String) }
     def describe_git
       return "N/A" unless Utils::Git.available?
 
       "#{Utils::Git.version} => #{Utils::Git.path}"
     end
 
+    sig { returns(String) }
     def describe_curl
-      out, = system_command(curl_executable, args: ["--version"])
+      out, = system_command(curl_executable, args: ["--version"], verbose: false)
 
       if /^curl (?<curl_version>[\d.]+)/ =~ out
         "#{curl_version} => #{curl_executable}"
@@ -177,7 +184,6 @@ module SystemConfig
       f.puts "Clang: #{describe_clang}"
       f.puts "Git: #{describe_git}"
       f.puts "Curl: #{describe_curl}"
-      f.puts "Java: #{describe_java}" if describe_java != "N/A"
     end
 
     def dump_verbose_config(f = $stdout)

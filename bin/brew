@@ -58,6 +58,8 @@ then
   fi
 fi
 
+# If the location of HOMEBREW_LIBRARY changes
+# keg_relocate.rb, formula_cellar_checks.rb, and test/global_spec.rb need to change.
 HOMEBREW_LIBRARY="$HOMEBREW_REPOSITORY/Library"
 
 # Copy and export all HOMEBREW_* variables previously mentioned in
@@ -72,6 +74,11 @@ do
   [[ -n "${!VAR_NEW}" ]] && continue
   export "$VAR_NEW"="${!VAR}"
 done
+
+export HOMEBREW_BREW_FILE
+export HOMEBREW_PREFIX
+export HOMEBREW_REPOSITORY
+export HOMEBREW_LIBRARY
 
 # Use VISUAL if HOMEBREW_EDITOR and EDITOR are unset.
 if [[ -z "$HOMEBREW_EDITOR" && -n "$VISUAL" ]]
@@ -106,6 +113,8 @@ then
 
   exec /usr/bin/env -i "${FILTERED_ENV[@]}" /bin/bash "$HOMEBREW_LIBRARY/Homebrew/brew.sh" "$@"
 else
+  echo "Warning: HOMEBREW_NO_ENV_FILTERING is undocumented, deprecated and will be removed in a future Homebrew release (because it breaks many things)!" >&2
+
   # Don't need shellcheck to follow this `source`.
   # shellcheck disable=SC1090
   source "$HOMEBREW_LIBRARY/Homebrew/brew.sh"

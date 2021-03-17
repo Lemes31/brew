@@ -90,6 +90,8 @@ module Cask
 
     # Loads a cask from a URI.
     class FromURILoader < FromPathLoader
+      extend T::Sig
+
       def self.can_load?(ref)
         uri_regex = ::URI::DEFAULT_PARSER.make_regexp
         return false unless ref.to_s.match?(Regexp.new("\\A#{uri_regex.source}\\Z", uri_regex.options))
@@ -103,6 +105,7 @@ module Cask
 
       attr_reader :url
 
+      sig { params(url: T.any(URI::Generic, String)).void }
       def initialize(url)
         @url = URI(url)
         super Cache.path/File.basename(@url.path)
@@ -112,7 +115,7 @@ module Cask
         path.dirname.mkpath
 
         begin
-          ohai "Downloading #{url}."
+          ohai "Downloading #{url}"
           curl_download url, to: path
         rescue ErrorDuringExecution
           raise CaskUnavailableError.new(token, "Failed to download #{Formatter.url(url)}.")
@@ -154,7 +157,7 @@ module Cask
       end
 
       def load(config:)
-        tap.install unless tap.installed?
+        raise TapCaskUnavailableError.new(tap, token) unless tap.installed?
 
         super
       end
@@ -177,10 +180,13 @@ module Cask
 
     # Pseudo-loader which raises an error when trying to load the corresponding cask.
     class NullLoader < FromPathLoader
+      extend T::Sig
+
       def self.can_load?(*)
         true
       end
 
+      sig { params(ref: T.any(String, Pathname)).void }
       def initialize(ref)
         token = File.basename(ref, ".rb")
         super CaskLoader.default_path(token)

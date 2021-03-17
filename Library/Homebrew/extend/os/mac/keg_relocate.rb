@@ -39,10 +39,10 @@ class Keg
     end
   end
 
-  # Detects the C++ dynamic libraries in place, scanning the dynamic links
+  # Detects the C++ dynamic libraries in-place, scanning the dynamic links
   # of the files within the keg.
   # Note that this doesn't attempt to distinguish between libstdc++ versions,
-  # for instance between Apple libstdc++ and GNU libstdc++
+  # for instance between Apple libstdc++ and GNU libstdc++.
   def detect_cxx_stdlibs(options = {})
     skip_executables = options.fetch(:skip_executables, false)
     results = Set.new
@@ -77,7 +77,7 @@ class Keg
         # remove all RPATHs from the file.
         if ENV["HOMEBREW_RELOCATE_METAVARS"] &&
            file.dynamically_linked_libraries.none? { |lib| lib.start_with?("@rpath") }
-          # Note: This could probably be made more efficient by reverse-sorting
+          # NOTE: This could probably be made more efficient by reverse-sorting
           # the RPATHs by offset and calling MachOFile#delete_command
           # with repopulate: false.
           file.rpaths.each { |r| file.delete_rpath(r) }
@@ -162,7 +162,7 @@ class Keg
     mach_o_files = []
     path.find do |pn|
       next if pn.symlink? || pn.directory?
-      next unless pn.dylib? || pn.mach_o_bundle? || pn.mach_o_executable?
+      next if !pn.dylib? && !pn.mach_o_bundle? && !pn.mach_o_executable?
       # if we've already processed a file, ignore its hardlinks (which have the same dev ID and inode)
       # this prevents relocations from being performed on a binary more than once
       next unless hardlinks.add? [pn.stat.dev, pn.stat.ino]

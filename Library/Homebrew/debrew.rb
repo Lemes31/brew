@@ -41,10 +41,13 @@ module Debrew
 
   # Module for displaying a debugging menu.
   class Menu
+    extend T::Sig
+
     Entry = Struct.new(:name, :action)
 
     attr_accessor :prompt, :entries
 
+    sig { void }
     def initialize
       @entries = []
     end
@@ -109,9 +112,7 @@ module Debrew
   end
 
   def self.debug(e)
-    original_raise(e) unless active? &&
-                             debugged_exceptions.add?(e) &&
-                             try_lock
+    original_raise(e) if !active? || !debugged_exceptions.add?(e) || !try_lock
 
     begin
       puts e.backtrace.first.to_s

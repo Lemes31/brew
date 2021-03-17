@@ -3,17 +3,11 @@
 
 module Cask
   class Cmd
-    # Implementation of the `brew cask install` command.
+    # Cask implementation of the `brew install` command.
     #
     # @api private
     class Install < AbstractCommand
-      def self.min_named
-        :cask
-      end
-
-      def self.description
-        "Installs the given <cask>."
-      end
+      extend T::Sig
 
       OPTIONS = [
         [:switch, "--skip-cask-deps", {
@@ -30,10 +24,11 @@ module Cask
             send(*option)
           end
 
-          instance_eval(&block) if block_given?
+          instance_eval(&block) if block
         end
       end
 
+      sig { void }
       def run
         self.class.install_casks(
           *casks,

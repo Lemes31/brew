@@ -4,13 +4,14 @@
 require "cli/parser"
 
 module Homebrew
+  extend T::Sig
+
   module_function
 
+  sig { returns(CLI::Parser) }
   def tap_info_args
     Homebrew::CLI::Parser.new do
-      usage_banner <<~EOS
-        `tap-info` [<options>] [<tap>]
-
+      description <<~EOS
         Show detailed information about one or more <tap>s.
 
         If no <tap> names are provided, display brief statistics for all installed taps.
@@ -21,6 +22,8 @@ module Homebrew
              description: "Print a JSON representation of <tap>. Currently the default and only accepted "\
                           "value for <version> is `v1`. See the docs for examples of using the JSON "\
                           "output: <https://docs.brew.sh/Querying-Brew>"
+
+      named_args :tap
     end
   end
 
@@ -30,9 +33,7 @@ module Homebrew
     taps = if args.installed?
       Tap
     else
-      args.named.sort.map do |name|
-        Tap.fetch(name)
-      end
+      args.named.to_taps
     end
 
     if args.json
@@ -77,7 +78,7 @@ module Homebrew
           end
           info += ", private" if tap.private?
           info += "\n#{tap.path} (#{tap.path.abv})"
-          info += "\nFrom: #{tap.remote.blank? ? "N/A" : tap.remote}"
+          info += "\nFrom: #{tap.remote.presence || "N/A"}"
         else
           info += "Not installed"
         end

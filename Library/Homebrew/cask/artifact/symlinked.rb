@@ -9,10 +9,14 @@ module Cask
     #
     # @api private
     class Symlinked < Relocated
+      extend T::Sig
+
+      sig { returns(String) }
       def self.link_type_english_name
         "Symlink"
       end
 
+      sig { returns(String) }
       def self.english_description
         "#{english_name} #{link_type_english_name}s"
       end
@@ -61,14 +65,14 @@ module Cask
           end
         end
 
-        ohai "Linking #{self.class.english_name} '#{source.basename}' to '#{target}'."
+        ohai "Linking #{self.class.english_name} '#{source.basename}' to '#{target}'"
         create_filesystem_link(**options)
       end
 
       def unlink(**)
         return unless target.symlink?
 
-        ohai "Unlinking #{self.class.english_name} '#{target}'."
+        ohai "Unlinking #{self.class.english_name} '#{target}'"
         target.delete
       end
 

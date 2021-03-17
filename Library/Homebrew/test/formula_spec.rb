@@ -56,7 +56,7 @@ describe Formula do
       expect { klass.new }.to raise_error(ArgumentError)
     end
 
-    context "in a Tap" do
+    context "when in a Tap" do
       let(:tap) { Tap.new("foo", "bar") }
       let(:path) { (tap.path/"Formula/#{name}.rb") }
       let(:full_name) { "#{tap.user}/#{tap.repo}/#{name}" }
@@ -440,6 +440,43 @@ describe Formula do
     end
   end
 
+  describe "::installed_formulae_with_no_dependents" do
+    let(:formula_is_dep) do
+      formula "foo" do
+        url "foo-1.1"
+      end
+    end
+
+    let(:formula_with_deps) do
+      formula "bar" do
+        url "bar-1.0"
+      end
+    end
+
+    let(:formulae) do
+      [
+        formula_with_deps,
+        formula_is_dep,
+      ]
+    end
+
+    before do
+      allow(formula_with_deps).to receive(:runtime_formula_dependencies).and_return([formula_is_dep])
+    end
+
+    specify "without formulae parameter" do
+      allow(described_class).to receive(:installed).and_return(formulae)
+
+      expect(described_class.installed_formulae_with_no_dependents)
+          .to eq([formula_with_deps])
+    end
+
+    specify "with formulae parameter" do
+      expect(described_class.installed_formulae_with_no_dependents(formulae))
+          .to eq([formula_with_deps])
+    end
+  end
+
   describe "::installed_with_alias_path" do
     specify "with alias path with nil" do
       expect(described_class.installed_with_alias_path(nil)).to be_empty
@@ -658,7 +695,7 @@ describe Formula do
         end
       end
 
-      expect(f.livecheck.url).to eq("https://brew.sh/test")
+      expect(f.livecheck.url).to eq(:homepage)
     end
   end
 
@@ -757,21 +794,17 @@ describe Formula do
     f1 = formula "f1" do
       url "f1-1"
 
-      depends_on :java
-      depends_on x11: :recommended
       depends_on xcode: ["1.0", :optional]
     end
     stub_formula_loader(f1)
 
-    java = JavaRequirement.new
-    x11 = X11Requirement.new([:recommended])
     xcode = XcodeRequirement.new(["1.0", :optional])
 
-    expect(Set.new(f1.recursive_requirements)).to eq(Set[java, x11])
+    expect(Set.new(f1.recursive_requirements)).to eq(Set[])
 
-    f1.build = BuildOptions.new(["--with-xcode", "--without-x11"], f1.options)
+    f1.build = BuildOptions.new(["--with-xcode"], f1.options)
 
-    expect(Set.new(f1.recursive_requirements)).to eq(Set[java, xcode])
+    expect(Set.new(f1.recursive_requirements)).to eq(Set[xcode])
 
     f1.build = f1.stable.build
     f2 = formula "f2" do
@@ -780,14 +813,14 @@ describe Formula do
       depends_on "f1"
     end
 
-    expect(Set.new(f2.recursive_requirements)).to eq(Set[java, x11])
-    expect(Set.new(f2.recursive_requirements {})).to eq(Set[java, x11, xcode])
+    expect(Set.new(f2.recursive_requirements)).to eq(Set[])
+    expect(Set.new(f2.recursive_requirements {})).to eq(Set[xcode])
 
     requirements = f2.recursive_requirements do |_dependent, requirement|
-      Requirement.prune if requirement.is_a?(JavaRequirement)
+      Requirement.prune if requirement.is_a?(XcodeRequirement)
     end
 
-    expect(Set.new(requirements)).to eq(Set[x11, xcode])
+    expect(Set.new(requirements)).to eq(Set[])
   end
 
   specify "#to_hash" do
@@ -805,6 +838,7 @@ describe Formula do
     expect(h).to be_a(Hash)
     expect(h["name"]).to eq("foo")
     expect(h["full_name"]).to eq("foo")
+    expect(h["tap"]).to eq("homebrew/core")
     expect(h["versions"]["stable"]).to eq("1.0")
     expect(h["versions"]["bottle"]).to be_truthy
   end
@@ -1361,6 +1395,52 @@ describe Formula do
     it "returns package version when installed" do
       f.brew { f.install }
       expect(f.any_installed_version).to eq(PkgVersion.parse("1.0_1"))
+    end
+  end
+
+  describe "#on_macos", :needs_macos do
+    let(:f) do
+      Class.new(Testball) do
+        @test = 0
+        attr_reader :test
+
+        def install
+          on_macos do
+            @test = 1
+          end
+          on_linux do
+            @test = 2
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within on_macos" do
+      f.brew { f.install }
+      expect(f.test).to eq(1)
+    end
+  end
+
+  describe "#on_linux", :needs_linux do
+    let(:f) do
+      Class.new(Testball) do
+        @test = 0
+        attr_reader :test
+
+        def install
+          on_macos do
+            @test = 1
+          end
+          on_linux do
+            @test = 2
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within on_linux" do
+      f.brew { f.install }
+      expect(f.test).to eq(2)
     end
   end
 end

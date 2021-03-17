@@ -2,6 +2,8 @@
 # frozen_string_literal: true
 
 module Superenv
+  extend T::Sig
+
   class << self
     undef bin
 
@@ -21,11 +23,11 @@ module Superenv
         homebrew_extra_cmake_include_paths,
         homebrew_extra_cmake_library_paths,
         homebrew_extra_cmake_frameworks_paths,
-        determine_cccfg, set_x11_env_if_installed
+        determine_cccfg
 
   def homebrew_extra_paths
     paths = []
-    paths << MacOS::XQuartz.bin.to_s if x11?
+    paths << MacOS::XQuartz.bin if x11?
     paths
   end
 
@@ -44,6 +46,7 @@ module Superenv
   end
 
   # @private
+  sig { returns(T::Boolean) }
   def libxml2_include_needed?
     return false if deps.any? { |d| d.name == "libxml2" }
     return false if Pathname("#{self["HOMEBREW_SDKROOT"]}/usr/include/libxml").directory?
@@ -95,20 +98,13 @@ module Superenv
 
   def determine_cccfg
     s = +""
-    # Fix issue with sed barfing on unicode characters on Mountain Lion
-    s << "s"
     # Fix issue with >= Mountain Lion apr-1-config having broken paths
     s << "a"
     s.freeze
   end
 
-  def set_x11_env_if_installed
-    ENV.x11 = MacOS::XQuartz.installed?
-  end
-
   # @private
-  def setup_build_environment(**options)
-    formula = options[:formula]
+  def setup_build_environment(formula: nil, cc: nil, build_bottle: false, bottle_arch: nil, testing_formula: false)
     sdk = formula ? MacOS.sdk_for_formula(formula) : MacOS.sdk
     if MacOS.sdk_root_needed? || sdk&.source == :xcode
       Homebrew::Diagnostic.checks(:fatal_setup_build_environment_checks)
@@ -123,7 +119,10 @@ module Superenv
       self["HOMEBREW_SDKROOT"] = nil
       self["HOMEBREW_DEVELOPER_DIR"] = nil
     end
-    generic_setup_build_environment(**options)
+    generic_setup_build_environment(
+      formula: formula, cc: cc, build_bottle: build_bottle,
+      bottle_arch: bottle_arch, testing_formula: testing_formula
+    )
 
     # Filter out symbols known not to be defined since GNU Autotools can't
     # reliably figure this out with Xcode 8 and above.

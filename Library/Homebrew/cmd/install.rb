@@ -14,15 +14,16 @@ require "cli/parser"
 require "upgrade"
 
 module Homebrew
+  extend T::Sig
+
   extend Search
 
   module_function
 
+  sig { returns(CLI::Parser) }
   def install_args
     Homebrew::CLI::Parser.new do
-      usage_banner <<~EOS
-        `install` [<options>] <formula>|<cask>
-
+      description <<~EOS
         Install a <formula> or <cask>. Additional options specific to a <formula> may be
         appended to the command.
 
@@ -34,7 +35,8 @@ module Homebrew
                           "or a shell inside the temporary build directory."
       switch "-f", "--force",
              description: "Install formulae without checking for previously installed keg-only or " \
-                          "non-migrated versions. Overwrite existing files when installing casks."
+                          "non-migrated versions. When installing casks, overwrite existing files "\
+                          "(binaries and symlinks are excluded, unless originally from the same cask)."
       switch "-v", "--verbose",
              description: "Print the verification and postinstall steps."
       [
@@ -82,7 +84,6 @@ module Homebrew
         }],
         [:switch, "--keep-tmp", {
           description: "Retain the temporary files created during installation.",
-
         }],
         [:switch, "--build-bottle", {
           description: "Prepare the formula for eventual bottling during installation, skipping any " \
@@ -123,15 +124,17 @@ module Homebrew
       conflicts "--ignore-dependencies", "--only-dependencies"
       conflicts "--build-from-source", "--build-bottle", "--force-bottle"
 
-      min_named :formula_or_cask
+      named_args [:formula, :cask], min: 1
     end
   end
 
   def install
     args = install_args.parse
 
-    only = :formula if args.formula? && !args.cask?
-    only = :cask if args.cask? && !args.formula?
+    if args.env.present?
+      # TODO: use `replacement: false` for 3.1.0.
+      odeprecated "brew install --env", "`env :std` in specific formula files"
+    end
 
     args.named.each do |name|
       next if File.exist?(name)
@@ -143,15 +146,21 @@ module Homebrew
 
     if args.ignore_dependencies?
       opoo <<~EOS
-        #{Tty.bold}--ignore-dependencies is an unsupported Homebrew developer flag!#{Tty.reset}
+        #{Tty.bold}`--ignore-dependencies` is an unsupported Homebrew developer flag!#{Tty.reset}
         Adjust your PATH to put any preferred versions of applications earlier in the
         PATH rather than using this unsupported flag!
 
       EOS
     end
 
-    formulae, casks = args.named.to_formulae_and_casks(only: only)
-                          .partition { |formula_or_cask| formula_or_cask.is_a?(Formula) }
+    begin
+      formulae, casks = args.named.to_formulae_and_casks
+                            .partition { |formula_or_cask| formula_or_cask.is_a?(Formula) }
+    rescue FormulaOrCaskUnavailableError, Cask::CaskUnavailableError => e
+      retry if Tap.install_default_cask_tap_if_necessary(force: args.cask?)
+
+      raise e
+    end
 
     if casks.any?
       Cask::Cmd::Install.install_casks(
@@ -159,8 +168,8 @@ module Homebrew
         binaries:       args.binaries?,
         verbose:        args.verbose?,
         force:          args.force?,
-        skip_cask_deps: args.skip_cask_deps?,
         require_sha:    args.require_sha?,
+        skip_cask_deps: args.skip_cask_deps?,
         quarantine:     args.quarantine?,
       )
     end
@@ -174,14 +183,15 @@ module Homebrew
     formulae.each do |f|
       # head-only without --HEAD is an error
       if !args.HEAD? && f.stable.nil?
-        raise <<~EOS
-          #{f.full_name} is a head-only formula
-          Install with `brew install --HEAD #{f.full_name}`
+        odie <<~EOS
+          #{f.full_name} is a head-only formula.
+          To install it, run:
+            brew install --HEAD #{f.full_name}
         EOS
       end
 
       # --HEAD, fail with no head defined
-      raise "No head is defined for #{f.full_name}" if args.HEAD? && f.head.nil?
+      odie "No head is defined for #{f.full_name}" if args.HEAD? && f.head.nil?
 
       installed_head_version = f.latest_head_version
       if installed_head_version &&
@@ -198,15 +208,17 @@ module Homebrew
         if f.outdated?
           optlinked_version = Keg.for(f.opt_prefix).version
           onoe <<~EOS
-            #{f.full_name} #{optlinked_version} is already installed
-            To upgrade to #{f.version}, run `brew upgrade #{f.full_name}`
+            #{f.full_name} #{optlinked_version} is already installed.
+            To upgrade to #{f.version}, run:
+              brew upgrade #{f.full_name}
           EOS
         elsif args.only_dependencies?
           installed_formulae << f
-        else
+        elsif !args.quiet?
           opoo <<~EOS
-            #{f.full_name} #{f.pkg_version} is already installed and up-to-date
-            To reinstall #{f.pkg_version}, run `brew reinstall #{f.name}`
+            #{f.full_name} #{f.pkg_version} is already installed and up-to-date.
+            To reinstall #{f.pkg_version}, run:
+              brew reinstall #{f.name}
           EOS
         end
       elsif (args.HEAD? && new_head_installed) || prefix_installed
@@ -223,42 +235,58 @@ module Homebrew
         msg = "#{f.full_name} #{installed_version} is already installed"
         linked_not_equals_installed = f.linked_version != installed_version
         if f.linked? && linked_not_equals_installed
-          msg = <<~EOS
-            #{msg}
-            The currently linked version is #{f.linked_version}
-            You can use `brew switch #{f} #{installed_version}` to link this version.
-          EOS
+          msg = if args.quiet?
+            nil
+          else
+            <<~EOS
+              #{msg}.
+              The currently linked version is: #{f.linked_version}
+            EOS
+          end
         elsif !f.linked? || f.keg_only?
           msg = <<~EOS
-            #{msg}, it's just not linked
-            You can use `brew link #{f}` to link this version.
+            #{msg}, it's just not linked.
+            To link this version, run:
+              brew link #{f}
           EOS
         elsif args.only_dependencies?
           msg = nil
           installed_formulae << f
         else
-          msg = <<~EOS
-            #{msg} and up-to-date
-            To reinstall #{f.pkg_version}, run `brew reinstall #{f.name}`
-          EOS
+          msg = if args.quiet?
+            nil
+          else
+            <<~EOS
+              #{msg} and up-to-date.
+              To reinstall #{f.pkg_version}, run:
+                brew reinstall #{f.name}
+            EOS
+          end
         end
         opoo msg if msg
-      elsif !f.any_version_installed? && old_formula = f.old_installed_formulae.first
+      elsif !f.any_version_installed? && (old_formula = f.old_installed_formulae.first)
         msg = "#{old_formula.full_name} #{old_formula.any_installed_version} already installed"
-        if !old_formula.linked? && !old_formula.keg_only?
-          msg = <<~EOS
+        msg = if !old_formula.linked? && !old_formula.keg_only?
+          <<~EOS
             #{msg}, it's just not linked.
-            You can use `brew link #{old_formula.full_name}` to link this version.
+            To link this version, run:
+              brew link #{old_formula.full_name}
           EOS
+        elsif args.quiet?
+          nil
+        else
+          "#{msg}."
         end
-        opoo msg
+        opoo msg if msg
       elsif f.migration_needed? && !args.force?
         # Check if the formula we try to install is the same as installed
         # but not migrated one. If --force is passed then install anyway.
         opoo <<~EOS
-          #{f.oldname} is already installed, it's just not migrated
-          You can migrate this formula with `brew migrate #{f}`
-          Or you can force install it with `brew install #{f} --force`
+          #{f.oldname} is already installed, it's just not migrated.
+          To migrate this formula, run:
+            brew migrate #{f}
+          Or to force-install it, run:
+            brew install #{f} --force
         EOS
       else
         # If none of the above is true and the formula is linked, then
@@ -288,7 +316,7 @@ module Homebrew
       Cleanup.install_formula_clean!(f)
     end
 
-    Upgrade.check_installed_dependents(args: args)
+    Upgrade.check_installed_dependents(installed_formulae, args: args)
 
     Homebrew.messages.display_messages(display_times: args.display_times?)
   rescue FormulaUnreadableError, FormulaClassUnavailableError,
@@ -347,21 +375,28 @@ module Homebrew
     f.print_tap_action
     build_options = f.build
 
-    fi = FormulaInstaller.new(f, force_bottle:               args.force_bottle?,
-                                 include_test_formulae:      args.include_test_formulae,
-                                 build_from_source_formulae: args.build_from_source_formulae,
-                                 debug: args.debug?, quiet: args.quiet?, verbose: args.verbose?)
-    fi.options              = build_options.used_options
-    fi.env                  = args.env
-    fi.force                = args.force?
-    fi.keep_tmp             = args.keep_tmp?
-    fi.ignore_deps          = args.ignore_dependencies?
-    fi.only_deps            = args.only_dependencies?
-    fi.build_bottle         = args.build_bottle?
-    fi.bottle_arch          = args.bottle_arch
-    fi.interactive          = args.interactive?
-    fi.git                  = args.git?
-    fi.cc                   = args.cc
+    fi = FormulaInstaller.new(
+      f,
+      **{
+        options:                    build_options.used_options,
+        build_bottle:               args.build_bottle?,
+        force_bottle:               args.force_bottle?,
+        bottle_arch:                args.bottle_arch,
+        ignore_deps:                args.ignore_dependencies?,
+        only_deps:                  args.only_dependencies?,
+        include_test_formulae:      args.include_test_formulae,
+        build_from_source_formulae: args.build_from_source_formulae,
+        env:                        args.env,
+        cc:                         args.cc,
+        git:                        args.git?,
+        interactive:                args.interactive?,
+        keep_tmp:                   args.keep_tmp?,
+        force:                      args.force?,
+        debug:                      args.debug?,
+        quiet:                      args.quiet?,
+        verbose:                    args.verbose?,
+      }.compact,
+    )
     fi.prelude
     fi.fetch
     fi.install

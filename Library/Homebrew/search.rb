@@ -10,7 +10,7 @@ module Homebrew
   # @api private
   module Search
     def query_regexp(query)
-      if m = query.match(%r{^/(.*)/$})
+      if (m = query.match(%r{^/(.*)/$}))
         Regexp.new(m[1])
       else
         query
@@ -48,10 +48,12 @@ module Homebrew
           filename:  query,
           extension: "rb",
         )
-      rescue GitHub::Error => e
+      rescue GitHub::API::Error => e
         opoo "Error searching on GitHub: #{e}\n"
-        return results
+        nil
       end
+
+      return results if matches.blank?
 
       matches.each do |match|
         name = File.basename(match["path"], ".rb")

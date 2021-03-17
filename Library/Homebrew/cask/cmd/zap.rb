@@ -3,21 +3,11 @@
 
 module Cask
   class Cmd
-    # Implementation of the `brew cask zap` command.
+    # Cask implementation for the `brew uninstall` command.
     #
     # @api private
     class Zap < AbstractCommand
-      def self.min_named
-        :cask
-      end
-
-      def self.description
-        <<~EOS
-          Zaps all files associated with the given <cask>. Implicitly also performs all actions associated with `uninstall`.
-
-          *May remove files which are shared between applications.*
-        EOS
-      end
+      extend T::Sig
 
       def self.parser
         super do
@@ -26,7 +16,17 @@ module Cask
         end
       end
 
+      sig { void }
       def run
+        self.class.zap_casks(*casks, verbose: args.verbose?, force: args.force?)
+      end
+
+      sig { params(casks: Cask, force: T.nilable(T::Boolean), verbose: T.nilable(T::Boolean)).void }
+      def self.zap_casks(
+        *casks,
+        force: nil,
+        verbose: nil
+      )
         require "cask/installer"
 
         casks.each do |cask|
@@ -38,10 +38,10 @@ module Cask
               cask = CaskLoader.load(installed_caskfile)
             end
           else
-            raise CaskNotInstalledError, cask unless args.force?
+            raise CaskNotInstalledError, cask unless force
           end
 
-          Installer.new(cask, verbose: args.verbose?, force: args.force?).zap
+          Installer.new(cask, verbose: verbose, force: force).zap
         end
       end
     end

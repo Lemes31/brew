@@ -148,14 +148,13 @@ class Foo < Formula
   depends_on "readline" => :recommended
   depends_on "gtk+" => :optional
   depends_on "httpd" => [:build, :test]
-  depends_on :x11 => :optional
   depends_on :xcode => "9.3"
 end
 ```
 
 A String (e.g. `"jpeg"`) specifies a formula dependency.
 
-A Symbol (e.g. `:x11`) specifies a [`Requirement`](https://rubydoc.brew.sh/Requirement) which can be fulfilled by one or more formulae, casks or other system-wide installed software (e.g. X11).
+A Symbol (e.g. `:xcode`) specifies a [`Requirement`](https://rubydoc.brew.sh/Requirement) which can be fulfilled by one or more formulae, casks or other system-wide installed software (e.g. Xcode).
 
 A Hash (e.g. `=>`) adds information to a dependency. Given a String or Symbol, the value can be one or more of the following values:
 
@@ -175,7 +174,7 @@ description can be overridden using the normal option syntax (in this case, the 
     ```
 * Some [`Requirement`](https://rubydoc.brew.sh/Requirement)s can also take a string specifying their minimum version that the formula depends on.
 
-**Note:** [`option`](https://rubydoc.brew.sh/Formula#option-class_method)s are not allowed in Homebrew/homebrew-core as they are not tested by CI.
+**Note:** `:optional` and `:recommended` are not allowed in Homebrew/homebrew-core as they are not tested by CI.
 
 ### Specifying conflicts with other formulae
 
@@ -414,7 +413,7 @@ Three commands are provided for displaying informational messages to the user:
 In particular, when a test needs to be performed before installation use `odie` to bail out gracefully. For example:
 
 ```ruby
-if build.with?("qt") && build.with("qt5")
+if build.with?("qt") && build.with?("qt5")
   odie "Options --with-qt and --with-qt5 are mutually exclusive."
 end
 system "make", "install"
@@ -544,6 +543,19 @@ Instead of `git diff | pbcopy`, for some editors `git diff >> path/to/your/formu
 ## Advanced formula tricks
 
 If anything isn’t clear, you can usually figure it out by `grep`ping the `$(brew --repo homebrew/core)` directory. Please submit a pull request to amend this document if you think it will help!
+
+### `livecheck` blocks
+
+When `brew livecheck` is unable to identify versions for a formula, we can control its behavior using a `livecheck` block. Here is a simple example to check a page for links containing a filename like `example-1.2.tar.gz`:
+
+```ruby
+livecheck do
+  url "https://www.example.com/downloads/"
+  regex(/href=.*?example[._-]v?(\d+(?:\.\d+)+)\.t/i)
+end
+```
+
+For `url`/`regex` guidelines and additional `livecheck` block examples, refer to the [`brew livecheck` documentation](Brew-Livecheck.md). For more technical information on the methods used in a `livecheck` block, please refer to the [`Livecheck` class documentation](https://rubydoc.brew.sh/Livecheck.html).
 
 ### Unstable versions (`head`)
 
@@ -749,6 +761,40 @@ Homebrew provides two formula DSL methods for launchd plist files:
 * [`plist_name`](https://rubydoc.brew.sh/Formula#plist_name-instance_method) will return e.g. `homebrew.mxcl.<formula>`
 * [`plist_path`](https://rubydoc.brew.sh/Formula#plist_path-instance_method) will return e.g. `/usr/local/Cellar/foo/0.1/homebrew.mxcl.foo.plist`
 
+There is two ways to add plists to a formula, so that [`brew services`](https://github.com/Homebrew/homebrew-services) can pick it up:
+1. If the formula already provides a plist file the formula can install it into the prefix like so.
+
+```ruby
+prefix.install_symlink "file.plist" => "#{plist_name}.plist"
+```
+
+1. If the formula does not provide a plist you can add a plist using the following stanzas.
+This will define what the user can run manually instead of the launchd service.
+```ruby
+  plist_options manual: "#{HOMEBREW_PREFIX}/var/some/bin/stuff run"
+```
+
+This provides the actual plist file, see [Apple's plist(5) man page](https://www.unix.com/man-page/mojave/5/plist/) for more information.
+```ruby
+  def plist
+    <<~EOS
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+        <dict>
+          <key>Label</key>
+          <string>#{plist_name}</string>
+          <key>ProgramArguments</key>
+          <array>
+            <string>#{var}/some/bin/stuff</string>
+            <string>run</string>
+          </array>
+        </dict>
+      </plist>
+    EOS
+  end
+```
+
 ### Using environment variables
 
 Homebrew has multiple levels of environment variable filtering which affects variables available to formulae.
@@ -757,7 +803,13 @@ Firstly, the overall environment in which Homebrew runs is filtered to avoid env
 
 The second level of filtering removes sensitive environment variables (such as credentials like keys, passwords or tokens) to avoid malicious subprocesses obtaining them (<https://github.com/Homebrew/brew/pull/2524>). This has the effect of preventing any such variables from reaching a formula's Ruby code as they are filtered before it is called. The specific implementation can be seen in the [`ENV.clear_sensitive_environment!` method](https://github.com/Homebrew/brew/blob/HEAD/Library/Homebrew/extend/ENV.rb).
 
+You can set environment variables in a formula's `install` method using `ENV["VARIABLE_NAME"] = "VALUE"`. An example can be seen in [the `gh` formula](https://github.com/Homebrew/homebrew-core/blob/fd9ad29f8e3ca9476f838ebb13794ddb7dafba00/Formula/gh.rb#L22). Environment variables can also be set temporarily using the `with_env` method; any variables defined in the call to that method will be restored to their original values at the end of the block. An example can be seen in [the `csound` formula](https://github.com/Homebrew/homebrew-core/blob/c3feaff8cdb578331385676620c865796cfc3388/Formula/csound.rb#L155-L157).
+
 In summary, environment variables used by a formula need to conform to these filtering rules in order to be available.
+
+### Deprecating and disabling a formula
+
+See our [Deprecating, Disabling, and Removing Formulae](Deprecating-Disabling-and-Removing-Formulae.md) documentation for more information about how and when to deprecate or disable a formula.
 
 ## Updating formulae
 

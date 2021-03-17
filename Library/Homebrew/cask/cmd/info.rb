@@ -5,17 +5,11 @@ require "json"
 
 module Cask
   class Cmd
-    # Implementation of the `brew cask info` command.
+    # Cask implementation of the `brew info` command.
     #
     # @api private
     class Info < AbstractCommand
-      def self.min_named
-        :cask
-      end
-
-      def self.description
-        "Displays information about the given <cask>."
-      end
+      extend T::Sig
 
       def self.parser
         super do
@@ -42,6 +36,7 @@ module Cask
         end
       end
 
+      sig { void }
       def run
         if args.json == "v1"
           puts JSON.generate(args.named.to_casks.map(&:to_h))

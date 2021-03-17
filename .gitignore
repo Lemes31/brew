@@ -24,6 +24,7 @@
 # Ignore Bundler files
 **/.bundle/bin
 **/.bundle/cache
+**/vendor/bundle/ruby/*/bundler.lock
 **/vendor/bundle/ruby/*/bin
 **/vendor/bundle/ruby/*/build_info/
 **/vendor/bundle/ruby/*/cache
@@ -34,6 +35,7 @@
 # Unignore vendored gems
 !**/vendor/bundle/ruby/*/gems/*/lib
 !**/vendor/bundle/ruby/*/gems/rubocop-performance-*/config
+!**/vendor/bundle/ruby/*/gems/rubocop-rails-*/config
 !**/vendor/bundle/ruby/*/gems/rubocop-rspec-*/config
 !**/vendor/bundle/ruby/*/gems/rubocop-sorbet-*/config
 
@@ -83,6 +85,7 @@
 
 # Ignore dependencies we don't wish to vendor
 **/vendor/bundle/ruby/*/gems/ast-*/
+**/vendor/bundle/ruby/*/gems/bootsnap-*/
 **/vendor/bundle/ruby/*/gems/bundler-*/
 **/vendor/bundle/ruby/*/gems/byebug-*/
 **/vendor/bundle/ruby/*/gems/coderay-*/
@@ -103,6 +106,7 @@
 **/vendor/bundle/ruby/*/gems/mime-types-*/
 **/vendor/bundle/ruby/*/gems/mini_portile2-*/
 **/vendor/bundle/ruby/*/gems/minitest-*/
+**/vendor/bundle/ruby/*/gems/msgpack-*/
 **/vendor/bundle/ruby/*/gems/mustache-*/
 **/vendor/bundle/ruby/*/gems/net-http-digest_auth-*/
 **/vendor/bundle/ruby/*/gems/net-http-persistent-*/
@@ -115,6 +119,7 @@
 **/vendor/bundle/ruby/*/gems/powerpack-*/
 **/vendor/bundle/ruby/*/gems/psych-*/
 **/vendor/bundle/ruby/*/gems/pry-*/
+**/vendor/bundle/ruby/*/gems/racc-*/
 **/vendor/bundle/ruby/*/gems/rainbow-*/
 **/vendor/bundle/ruby/*/gems/rdiscount-*/
 **/vendor/bundle/ruby/*/gems/regexp_parser-*/
@@ -127,8 +132,9 @@
 **/vendor/bundle/ruby/*/gems/rspec-mocks-*/
 **/vendor/bundle/ruby/*/gems/rspec-retry-*/
 **/vendor/bundle/ruby/*/gems/rspec-support-*/
+**/vendor/bundle/ruby/*/gems/rspec-sorbet-*/
 **/vendor/bundle/ruby/*/gems/rspec-wait-*/
-**/vendor/bundle/ruby/*/gems/rubocop-0*/
+**/vendor/bundle/ruby/*/gems/rubocop-1*/
 **/vendor/bundle/ruby/*/gems/rubocop-ast-*/
 **/vendor/bundle/ruby/*/gems/ruby-prof-*/
 **/vendor/bundle/ruby/*/gems/simplecov-*/
@@ -179,3 +185,6 @@
 
 # Unignore tests' bundle config
 !/Library/Homebrew/test/.bundle/config
+
+# Unignore vscode configuration
+!/.vscode

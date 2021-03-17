@@ -114,8 +114,8 @@ pop_stash() {
 
 pop_stash_message() {
   [[ -z "$STASHED" ]] && return
-  echo "To restore the stashed changes to $DIR run:"
-  echo "  'cd $DIR && git stash pop'"
+  echo "To restore the stashed changes to $DIR, run:"
+  echo "  cd $DIR && git stash pop"
   unset STASHED
 }
 
@@ -308,6 +308,7 @@ homebrew-update() {
       -\?|-h|--help|--usage)          brew help update; exit $? ;;
       --verbose)                      HOMEBREW_VERBOSE=1 ;;
       --debug)                        HOMEBREW_DEBUG=1 ;;
+      --quiet)                        HOMEBREW_QUIET=1 ;;
       --merge)                        HOMEBREW_MERGE=1 ;;
       --force)                        HOMEBREW_UPDATE_FORCE=1 ;;
       --simulate-from-current-branch) HOMEBREW_SIMULATE_FROM_CURRENT_BRANCH=1 ;;
@@ -315,6 +316,7 @@ homebrew-update() {
       --*)                            ;;
       -*)
         [[ "$option" = *v* ]] && HOMEBREW_VERBOSE=1
+        [[ "$option" = *q* ]] && HOMEBREW_QUIET=1
         [[ "$option" = *d* ]] && HOMEBREW_DEBUG=1
         [[ "$option" = *f* ]] && HOMEBREW_UPDATE_FORCE=1
         ;;
@@ -342,11 +344,6 @@ EOS
     fi
   fi
 
-  if [[ -z "$HOMEBREW_AUTO_UPDATE_SECS" ]]
-  then
-    HOMEBREW_AUTO_UPDATE_SECS="300"
-  fi
-
   # check permissions
   if [[ -e "$HOMEBREW_CELLAR" && ! -w "$HOMEBREW_CELLAR" ]]
   then
@@ -372,21 +369,54 @@ EOS
   if [[ -n "$HOMEBREW_FORCE_BREWED_CURL" &&
       ! -x "$HOMEBREW_PREFIX/opt/curl/bin/curl" ]]
   then
-    brew install curl
+    # we cannot install a Homebrew cURL if homebrew/core is unavailable.
+    if [[ ! -d "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]] || ! brew install curl
+    then
+      odie "'curl' must be installed and in your PATH!"
+    fi
   fi
 
   if ! git --version &>/dev/null ||
      [[ -n "$HOMEBREW_FORCE_BREWED_GIT" &&
       ! -x "$HOMEBREW_PREFIX/opt/git/bin/git" ]]
   then
-    # we cannot install brewed git if homebrew/core is unavailable.
-    [[ -d "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]] && brew install git
-    unset GIT_EXECUTABLE
-    if ! git --version &>/dev/null
+    # we cannot install a Homebrew Git if homebrew/core is unavailable.
+    if [[ ! -d "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]] || ! brew install git
     then
-      odie "Git must be installed and in your PATH!"
+      odie "'git' must be installed and in your PATH!"
     fi
   fi
+
+  [[ -f "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core/.git/shallow" ]] && HOMEBREW_CORE_SHALLOW=1
+  [[ -f "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-cask/.git/shallow" ]] && HOMEBREW_CASK_SHALLOW=1
+  if [[ -n $HOMEBREW_CORE_SHALLOW && -n $HOMEBREW_CASK_SHALLOW ]]
+  then
+    SHALLOW_COMMAND_PHRASE="These commands"
+    SHALLOW_REPO_PHRASE="repositories"
+  else
+    SHALLOW_COMMAND_PHRASE="This command"
+    SHALLOW_REPO_PHRASE="repository"
+  fi
+
+  if [[ -n $HOMEBREW_CORE_SHALLOW || -n $HOMEBREW_CASK_SHALLOW ]]
+  then
+    odie <<EOS
+${HOMEBREW_CORE_SHALLOW:+
+  homebrew-core is a shallow clone.}${HOMEBREW_CASK_SHALLOW:+
+  homebrew-cask is a shallow clone.}
+To \`brew update\`, first run:${HOMEBREW_CORE_SHALLOW:+
+  git -C "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" fetch --unshallow}${HOMEBREW_CASK_SHALLOW:+
+  git -C "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-cask" fetch --unshallow}
+${SHALLOW_COMMAND_PHRASE} may take a few minutes to run due to the large size of the ${SHALLOW_REPO_PHRASE}.
+This restriction has been made on GitHub's request because updating shallow
+clones is an extremely expensive operation due to the tree layout and traffic of
+Homebrew/homebrew-core and Homebrew/homebrew-cask. We don't do this for you
+automatically to avoid repeatedly performing an expensive unshallow operation in
+CI systems (which should instead be fixed to not use shallow clones). Sorry for
+the inconvenience!
+EOS
+  fi
+
   export GIT_TERMINAL_PROMPT="0"
   export GIT_SSH_COMMAND="ssh -oBatchMode=yes"
 
@@ -455,7 +485,9 @@ EOS
   trap '{ /usr/bin/pkill -P $$; wait; exit 130; }' SIGINT
 
   local update_failed_file="$HOMEBREW_REPOSITORY/.git/UPDATE_FAILED"
+  local missing_remote_ref_dirs_file="$HOMEBREW_REPOSITORY/.git/FAILED_FETCH_DIRS"
   rm -f "$update_failed_file"
+  rm -f "$missing_remote_ref_dirs_file"
 
   for DIR in "$HOMEBREW_REPOSITORY" "$HOMEBREW_LIBRARY"/Taps/*/*
   do
@@ -513,7 +545,7 @@ EOS
         UPSTREAM_SHA_HTTP_CODE="$("$HOMEBREW_CURL" \
            "${CURL_DISABLE_CURLRC_ARGS[@]}" \
            --silent --max-time 3 \
-           --location --output /dev/null --write-out "%{http_code}" \
+           --location --no-remote-time --output /dev/null --write-out "%{http_code}" \
            --dump-header "$DIR/.git/GITHUB_HEADERS" \
            --user-agent "$HOMEBREW_USER_AGENT_CURL" \
            --header "Accept: $GITHUB_API_ACCEPT" \
@@ -538,23 +570,38 @@ EOS
         echo "Fetching $DIR..."
       fi
 
+      local tmp_failure_file="$HOMEBREW_REPOSITORY/.git/TMP_FETCH_FAILURES"
+      rm -f "$tmp_failure_file"
+
       if [[ -n "$HOMEBREW_UPDATE_PREINSTALL" ]]
       then
         git fetch --tags --force "${QUIET_ARGS[@]}" origin \
           "refs/heads/$UPSTREAM_BRANCH_DIR:refs/remotes/origin/$UPSTREAM_BRANCH_DIR" 2>/dev/null
       else
+        # Capture stderr to tmp_failure_file
         if ! git fetch --tags --force "${QUIET_ARGS[@]}" origin \
-          "refs/heads/$UPSTREAM_BRANCH_DIR:refs/remotes/origin/$UPSTREAM_BRANCH_DIR"
+          "refs/heads/$UPSTREAM_BRANCH_DIR:refs/remotes/origin/$UPSTREAM_BRANCH_DIR" 2>>"$tmp_failure_file"
         then
+          # Reprint fetch errors to stderr
+          [[ -f "$tmp_failure_file" ]] && cat "$tmp_failure_file" 1>&2
+
           if [[ "$UPSTREAM_SHA_HTTP_CODE" = "404" ]]
           then
             TAP="${DIR#$HOMEBREW_LIBRARY/Taps/}"
             echo "$TAP does not exist! Run \`brew untap $TAP\` to remove it." >>"$update_failed_file"
           else
             echo "Fetching $DIR failed!" >>"$update_failed_file"
+
+            if [[ -f "$tmp_failure_file" ]] &&
+               [[ "$(<"$tmp_failure_file")" = "fatal: couldn't find remote ref refs/heads/$UPSTREAM_BRANCH_DIR" ]]
+            then
+              echo "$DIR" >>"$missing_remote_ref_dirs_file"
+            fi
           fi
         fi
       fi
+
+      rm -f "$tmp_failure_file"
     ) &
   done
 
@@ -566,6 +613,13 @@ EOS
     onoe <"$update_failed_file"
     rm -f "$update_failed_file"
     export HOMEBREW_UPDATE_FAILED="1"
+  fi
+
+  if [[ -f "$missing_remote_ref_dirs_file" ]]
+  then
+    HOMEBREW_MISSING_REMOTE_REF_DIRS="$(<"$missing_remote_ref_dirs_file")"
+    rm -f "$missing_remote_ref_dirs_file"
+    export HOMEBREW_MISSING_REMOTE_REF_DIRS
   fi
 
   for DIR in "$HOMEBREW_REPOSITORY" "$HOMEBREW_LIBRARY"/Taps/*/*
@@ -601,6 +655,7 @@ EOS
 
   if [[ -n "$HOMEBREW_UPDATED" ||
         -n "$HOMEBREW_UPDATE_FAILED" ||
+        -n "$HOMEBREW_FAILED_FETCH_DIRS" ||
         -n "$HOMEBREW_UPDATE_FORCE" ||
         -d "$HOMEBREW_LIBRARY/LinkedKegs" ||
         ! -f "$HOMEBREW_CACHE/all_commands_list.txt" ||
@@ -608,7 +663,8 @@ EOS
   then
     brew update-report "$@"
     return $?
-  elif [[ -z "$HOMEBREW_UPDATE_PREINSTALL" ]]
+  elif [[ -z "$HOMEBREW_UPDATE_PREINSTALL" &&
+	  -z "$HOMEBREW_QUIET" ]]
   then
     echo "Already up-to-date."
   fi

@@ -7,7 +7,7 @@ module Language
   # @api public
   module Python
     def self.major_minor_version(python)
-      version = /\d\.\d/.match `#{python} --version 2>&1`
+      version = /\d\.\d+/.match `#{python} --version 2>&1`
       return unless version
 
       Version.create(version.to_s)
@@ -114,43 +114,17 @@ module Language
 
     # Mixin module for {Formula} adding virtualenv support features.
     module Virtualenv
-      def self.included(base)
-        base.class_eval do
-          resource "homebrew-virtualenv" do
-            url "https://files.pythonhosted.org/packages/06/8c/eb8a0ae49eba5be054ca32b3a1dca432baee1d83c4f125d276c6a5fd2d20/virtualenv-20.1.0.tar.gz"
-            sha256 "b8d6110f493af256a40d65e29846c69340a947669eec8ce784fcf3dd3af28380"
-          end
-
-          resource "homebrew-appdirs" do
-            url "https://files.pythonhosted.org/packages/d7/d8/05696357e0311f5b5c316d7b95f46c669dd9c15aaeecbb48c7d0aeb88c40/appdirs-1.4.4.tar.gz"
-            sha256 "7d5d0167b2b1ba821647616af46a749d1c653740dd0d2415100fe26e27afdf41"
-          end
-
-          resource "homebrew-distlib" do
-            url "https://files.pythonhosted.org/packages/2f/83/1eba07997b8ba58d92b3e51445d5bf36f9fba9cb8166bcae99b9c3464841/distlib-0.3.1.zip"
-            sha256 "edf6116872c863e1aa9d5bb7cb5e05a022c519a4594dc703843343a9ddd9bff1"
-          end
-
-          resource "homebrew-filelock" do
-            url "https://files.pythonhosted.org/packages/14/ec/6ee2168387ce0154632f856d5cc5592328e9cf93127c5c9aeca92c8c16cb/filelock-3.0.12.tar.gz"
-            sha256 "18d82244ee114f543149c66a6e0c14e9c4f8a1044b5cdaadd0f82159d6a6ff59"
-          end
-
-          resource "homebrew-six" do
-            url "https://files.pythonhosted.org/packages/6b/34/415834bfdafca3c5f451532e8a8d9ba89a21c9743a0c59fbd0205c7f9426/six-1.15.0.tar.gz"
-            sha256 "30639c035cdb23534cd4aa2dd52c3bf48f06e5f4a941509c8bafd8ce11080259"
-          end
-        end
-      end
+      extend T::Sig
 
       # Instantiates, creates, and yields a {Virtualenv} object for use from
       # {Formula#install}, which provides helper methods for instantiating and
       # installing packages into a Python virtualenv.
+      #
       # @param venv_root [Pathname, String] the path to the root of the virtualenv
       #   (often `libexec/"venv"`)
-      # @param python [String] which interpreter to use (e.g. "python"
-      #   or "python2")
-      # @param formula [Formula] the active Formula
+      # @param python [String] which interpreter to use (e.g. "python3"
+      #   or "python3.x")
+      # @param formula [Formula] the active {Formula}
       # @return [Virtualenv] a {Virtualenv} instance
       def virtualenv_create(venv_root, python = "python", formula = self)
         ENV.refurbish_args
@@ -179,10 +153,11 @@ module Language
 
       # Returns true if a formula option for the specified python is currently
       # active or if the specified python is required by the formula. Valid
-      # inputs are "python", "python2", :python, and :python2. Note that
+      # inputs are "python", "python2", and :python3. Note that
       # "with-python", "without-python", "with-python@2", and "without-python@2"
       # formula options are handled correctly even if not associated with any
       # corresponding depends_on statement.
+      #
       # @api private
       def needs_python?(python)
         return true if build.with?(python)
@@ -193,7 +168,7 @@ module Language
       # Helper method for the common case of installing a Python application.
       # Creates a virtualenv in `libexec`, installs all `resource`s defined
       # on the formula, and then installs the formula. An options hash may be
-      # passed (e.g., `:using => "python"`) to override the default, guessed
+      # passed (e.g. `:using => "python"`) to override the default, guessed
       # formula preference for python or python@x.y, or to resolve an ambiguous
       # case where it's not clear whether python or python@x.y should be the
       # default guess.
@@ -213,6 +188,7 @@ module Language
         venv
       end
 
+      sig { returns(T::Array[String]) }
       def python_names
         %w[python python3 pypy pypy3] + Formula.names.select { |name| name.start_with? "python@" }
       end
@@ -222,10 +198,11 @@ module Language
       class Virtualenv
         # Initializes a Virtualenv instance. This does not create the virtualenv
         # on disk; {#create} does that.
-        # @param formula [Formula] the active Formula
+        #
+        # @param formula [Formula] the active {Formula}
         # @param venv_root [Pathname, String] the path to the root of the
         #   virtualenv
-        # @param python [String] which interpreter to use, i.e. "python" or
+        # @param python [String] which interpreter to use, e.g. "python" or
         #   "python2"
         def initialize(formula, venv_root, python)
           @formula = formula
@@ -233,38 +210,20 @@ module Language
           @python = python
         end
 
-        # Obtains a copy of the virtualenv library and creates a new virtualenv
-        # on disk.
+        # Obtains a copy of the virtualenv library and creates a new virtualenv on disk.
+        #
         # @return [void]
         def create
           return if (@venv_root/"bin/python").exist?
 
-          @formula.resource("homebrew-virtualenv").stage do |stage|
-            old_pythonpath = ENV.delete "PYTHONPATH"
-            begin
-              staging = Pathname.new(stage.staging.tmpdir)
-
-              ENV.prepend_create_path "PYTHONPATH", staging/"target/vendor"/Language::Python.site_packages(@python)
-              %w[appdirs distlib filelock six].each do |virtualenv_dependency|
-                @formula.resource("homebrew-#{virtualenv_dependency}").stage do
-                  @formula.system @python, *Language::Python.setup_install_args(staging/"target/vendor")
-                end
-              end
-
-              ENV.prepend_create_path "PYTHONPATH", staging/"target"/Language::Python.site_packages(@python)
-              @formula.system @python, *Language::Python.setup_install_args(staging/"target")
-              @formula.system @python, "-s", staging/"target/bin/virtualenv", "-p", @python, @venv_root
-            ensure
-              ENV["PYTHONPATH"] = old_pythonpath
-            end
-          end
+          @formula.system @python, "-m", "venv", @venv_root
 
           # Robustify symlinks to survive python patch upgrades
           @venv_root.find do |f|
             next unless f.symlink?
             next unless (rp = f.realpath.to_s).start_with? HOMEBREW_CELLAR
 
-            version = rp.match %r{^#{HOMEBREW_CELLAR}/python@(.*?)/}
+            version = rp.match %r{^#{HOMEBREW_CELLAR}/python@(.*?)/}o
             version = "@#{version.captures.first}" unless version.nil?
 
             new_target = rp.sub %r{#{HOMEBREW_CELLAR}/python#{version}/[^/]+}, Formula["python#{version}"].opt_prefix
@@ -275,7 +234,7 @@ module Language
           Pathname.glob(@venv_root/"lib/python*/orig-prefix.txt").each do |prefix_file|
             prefix_path = prefix_file.read
 
-            version = prefix_path.match %r{^#{HOMEBREW_CELLAR}/python@(.*?)/}
+            version = prefix_path.match %r{^#{HOMEBREW_CELLAR}/python@(.*?)/}o
             version = "@#{version.captures.first}" unless version.nil?
 
             prefix_path.sub! %r{^#{HOMEBREW_CELLAR}/python#{version}/[^/]+}, Formula["python#{version}"].opt_prefix
@@ -284,8 +243,9 @@ module Language
         end
 
         # Installs packages represented by `targets` into the virtualenv.
+        #
         # @param targets [String, Pathname, Resource,
-        #   Array<String, Pathname, Resource>] (A) token(s) passed to pip
+        #   Array<String, Pathname, Resource>] (A) token(s) passed to `pip`
         #   representing the object to be installed. This can be a directory
         #   containing a setup.py, a {Resource} which will be staged and
         #   installed, or a package identifier to be fetched from PyPI.
@@ -296,8 +256,6 @@ module Language
           targets = Array(targets)
           targets.each do |t|
             if t.respond_to? :stage
-              next if t.name.start_with? "homebrew-"
-
               t.stage { do_install Pathname.pwd }
             else
               t = t.lines.map(&:strip) if t.respond_to?(:lines) && t.include?("\n")
@@ -307,7 +265,8 @@ module Language
         end
 
         # Installs packages represented by `targets` into the virtualenv, but
-        #   unlike {#pip_install} also links new scripts to {Formula#bin}.
+        # unlike {#pip_install} also links new scripts to {Formula#bin}.
+        #
         # @param (see #pip_install)
         # @return (see #pip_install)
         def pip_install_and_link(targets)

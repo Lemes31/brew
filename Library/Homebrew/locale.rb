@@ -3,10 +3,12 @@
 
 # Representation of a system locale.
 #
-# Used to compare the system language and languages defined using cask `language` stanza.
+# Used to compare the system language and languages defined using the cask `language` stanza.
 #
 # @api private
 class Locale
+  extend T::Sig
+
   # Error when a string cannot be parsed to a `Locale`.
   class ParserError < StandardError
   end
@@ -27,24 +29,25 @@ class Locale
   private_constant :LOCALE_REGEX
 
   def self.parse(string)
-    if locale = try_parse(string)
+    if (locale = try_parse(string))
       return locale
     end
 
     raise ParserError, "'#{string}' cannot be parsed to a #{self}"
   end
 
+  sig { params(string: String).returns(T.nilable(T.attached_class)) }
   def self.try_parse(string)
     return if string.blank?
 
     scanner = StringScanner.new(string)
 
-    if language = scanner.scan(LANGUAGE_REGEX)
+    if (language = scanner.scan(LANGUAGE_REGEX))
       sep = scanner.scan(/-/)
       return if (sep && scanner.eos?) || (sep.nil? && !scanner.eos?)
     end
 
-    if region = scanner.scan(REGION_REGEX)
+    if (region = scanner.scan(REGION_REGEX))
       sep = scanner.scan(/-/)
       return if (sep && scanner.eos?) || (sep.nil? && !scanner.eos?)
     end
@@ -107,6 +110,7 @@ class Locale
       locale_groups.find { |locales| locales.any? { |locale| include?(locale) } }
   end
 
+  sig { returns(String) }
   def to_s
     [@language, @region, @script].compact.join("-")
   end

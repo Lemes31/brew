@@ -2,7 +2,7 @@
 # frozen_string_literal: true
 
 require "utils/bottles"
-require "utils/gems"
+
 require "formula"
 require "cask/cask_loader"
 require "set"
@@ -12,10 +12,10 @@ module Homebrew
   #
   # @api private
   class Cleanup
-    CLEANUP_DEFAULT_DAYS = 30
+    CLEANUP_DEFAULT_DAYS = Homebrew::EnvConfig.cleanup_periodic_full_days.to_i.freeze
     private_constant :CLEANUP_DEFAULT_DAYS
 
-    # `Pathname` refinement with helper functions for cleaning up files.
+    # {Pathname} refinement with helper functions for cleaning up files.
     module CleanupRefinement
       refine Pathname do
         def incomplete?
@@ -79,20 +79,22 @@ module Homebrew
 
           version = Version.new(version)
 
-          return false unless formula_name = basename.to_s[/\A(.*?)(?:--.*?)*--?(?:#{Regexp.escape(version)})/, 1]
+          return false unless (formula_name = basename.to_s[/\A(.*?)(?:--.*?)*--?(?:#{Regexp.escape(version)})/, 1])
 
           formula = begin
             Formulary.from_rack(HOMEBREW_CELLAR/formula_name)
           rescue FormulaUnavailableError, TapFormulaAmbiguityError, TapFormulaWithOldnameAmbiguityError
-            return false
+            nil
           end
+
+          return false if formula.blank?
 
           resource_name = basename.to_s[/\A.*?--(.*?)--?(?:#{Regexp.escape(version)})/, 1]
 
           if resource_name == "patch"
             patch_hashes = formula.stable&.patches&.select(&:external?)&.map(&:resource)&.map(&:version)
-            return true unless patch_hashes&.include?(Checksum.new(:sha256, version.to_s))
-          elsif resource_name && resource_version = formula.stable&.resources&.dig(resource_name)&.version
+            return true unless patch_hashes&.include?(Checksum.new(version.to_s))
+          elsif resource_name && (resource_version = formula.stable&.resources&.dig(resource_name)&.version)
             return true if resource_version != version
           elsif version.is_a?(PkgVersion)
             return true if formula.pkg_version > version
@@ -108,17 +110,19 @@ module Homebrew
         end
 
         def stale_cask?(scrub)
-          return false unless name = basename.to_s[/\A(.*?)--/, 1]
+          return false unless (name = basename.to_s[/\A(.*?)--/, 1])
 
           cask = begin
             Cask::CaskLoader.load(name)
           rescue Cask::CaskError
-            return false
+            nil
           end
+
+          return false if cask.blank?
 
           return true unless basename.to_s.match?(/\A#{Regexp.escape(name)}--#{Regexp.escape(cask.version)}\b/)
 
-          return true if scrub && !cask.versions.include?(cask.version)
+          return true if scrub && cask.versions.exclude?(cask.version)
 
           if cask.version.latest?
             return mtime < CLEANUP_DEFAULT_DAYS.days.ago &&
@@ -136,7 +140,7 @@ module Homebrew
 
     PERIODIC_CLEAN_FILE = (HOMEBREW_CACHE/".cleaned").freeze
 
-    attr_predicate :dry_run?, :scrub?
+    attr_predicate :dry_run?, :scrub?, :prune?
     attr_reader :args, :days, :cache, :disk_cleanup_size
 
     def initialize(*args, dry_run: false, scrub: false, days: nil, cache: HOMEBREW_CACHE)
@@ -144,6 +148,7 @@ module Homebrew
       @args = args
       @dry_run = dry_run
       @scrub = scrub
+      @prune = days.present?
       @days = days || Homebrew::EnvConfig.cleanup_max_age_days.to_i
       @cache = cache
       @cleaned_up_paths = Set.new
@@ -164,6 +169,7 @@ module Homebrew
       return false if Homebrew::EnvConfig.no_install_cleanup?
 
       unless PERIODIC_CLEAN_FILE.exist?
+        HOMEBREW_CACHE.mkpath
         FileUtils.touch PERIODIC_CLEAN_FILE
         return false
       end
@@ -202,6 +208,7 @@ module Homebrew
         return if periodic
 
         cleanup_portable_ruby
+        cleanup_bootsnap
       else
         args.each do |arg|
           formula = begin
@@ -242,7 +249,7 @@ module Homebrew
     end
 
     def cleanup_keg(keg)
-      cleanup_path(keg) { keg.uninstall }
+      cleanup_path(keg) { keg.uninstall(raise_failures: true) }
     rescue Errno::EACCES => e
       opoo e.message
       unremovable_kegs << keg
@@ -310,7 +317,8 @@ module Homebrew
           next
         end
 
-        next cleanup_path(path) { path.unlink } if path.stale?(scrub: scrub?)
+        # If we've specifed --prune don't do the (expensive) .stale? check.
+        cleanup_path(path) { path.unlink } if !prune? && path.stale?(scrub: scrub?)
       end
 
       cleanup_unreferenced_downloads
@@ -356,6 +364,8 @@ module Homebrew
 
       use_system_ruby = if Homebrew::EnvConfig.force_vendor_ruby?
         false
+      elsif OS.mac?
+        ENV["HOMEBREW_MACOS_SYSTEM_RUBY_NEW_ENOUGH"].present?
       else
         check_ruby_version = HOMEBREW_LIBRARY_PATH/"utils/ruby_check_version_script.rb"
         rubies.uniq.any? do |ruby|
@@ -387,6 +397,17 @@ module Homebrew
       return if dry_run?
 
       FileUtils.rm_rf portable_rubies_to_remove
+    end
+
+    def cleanup_bootsnap
+      bootsnap = cache/"bootsnap"
+      return unless bootsnap.exist?
+
+      if dry_run?
+        puts "Would remove: #{bootsnap} (#{bootsnap.abv})"
+      else
+        FileUtils.rm_rf bootsnap
+      end
     end
 
     def cleanup_cache_db(rack = nil)
@@ -439,7 +460,7 @@ module Homebrew
                 path.unlink
               end
             end
-          elsif path.directory? && !Keg::MUST_EXIST_SUBDIRECTORIES.include?(path)
+          elsif path.directory? && Keg::MUST_EXIST_SUBDIRECTORIES.exclude?(path)
             dirs << path
           end
         end

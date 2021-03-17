@@ -7,21 +7,17 @@ require "requirement"
 #
 # @api private
 class MacOSRequirement < Requirement
+  extend T::Sig
+
   fatal true
 
   attr_reader :comparator, :version
 
   def initialize(tags = [], comparator: ">=")
-    begin
-      @version = if comparator == "==" && tags.first.respond_to?(:map)
-        tags.shift.map { |s| MacOS::Version.from_symbol(s) }
-      else
-        MacOS::Version.from_symbol(tags.shift) unless tags.empty?
-      end
-    rescue MacOSVersionError => e
-      raise if e.version != :mavericks
-
-      odisabled "depends_on :macos => :mavericks"
+    @version = if comparator == "==" && tags.first.respond_to?(:map)
+      tags.shift.map { |s| MacOS::Version.from_symbol(s) }
+    else
+      MacOS::Version.from_symbol(tags.shift) unless tags.empty?
     end
 
     @comparator = comparator
@@ -66,14 +62,22 @@ class MacOSRequirement < Requirement
     end
   end
 
+  sig { returns(String) }
   def inspect
     "#<#{self.class.name}: version#{@comparator}#{@version.to_s.inspect} #{tags.inspect}>"
   end
 
+  sig { returns(String) }
   def display_s
-    return "macOS" unless version_specified?
-
-    "macOS #{@comparator} #{@version}"
+    if version_specified?
+      if @version.respond_to?(:to_ary)
+        "macOS #{@comparator} #{version.join(" / ")}"
+      else
+        "macOS #{@comparator} #{@version}"
+      end
+    else
+      "macOS"
+    end
   end
 
   def to_json(*args)

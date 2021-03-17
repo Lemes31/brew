@@ -4,6 +4,13 @@
 require "requirement"
 
 class OsxfuseRequirement < Requirement
+  extend T::Sig
+
+  def initialize(tags = [])
+    odisabled "depends_on :osxfuse", 'on_linux do; depends_on "libfuse"; end'
+    super(tags)
+  end
+
   download "https://github.com/libfuse/libfuse"
 
   satisfy(build_env: false) do
@@ -20,6 +27,7 @@ class OsxfuseRequirement < Requirement
     false
   end
 
+  sig { returns(String) }
   def message
     msg = "libfuse is required for this software.\n"
     if libfuse_formula_exists?
@@ -33,6 +41,7 @@ class OsxfuseRequirement < Requirement
 
   private
 
+  sig { returns(T::Boolean) }
   def libfuse_formula_exists?
     begin
       Formula["libfuse"]
