@@ -53,7 +53,7 @@ module Homebrew
 
     limit = args.limit.to_i if args.limit.present?
 
-    if formulae_and_casks
+    if formulae_and_casks.present?
       Livecheck.load_other_tap_strategies(formulae_and_casks)
 
       ambiguous_casks = []
@@ -170,7 +170,8 @@ module Homebrew
   end
 
   def retrieve_pull_requests(formula_or_cask, name)
-    pull_requests = GitHub.fetch_pull_requests(name, formula_or_cask.tap&.full_name, state: "open")
+    tap_remote_repo = formula_or_cask.tap&.remote_repo || formula_or_cask.tap&.full_name
+    pull_requests = GitHub.fetch_pull_requests(name, tap_remote_repo, state: "open")
     if pull_requests.try(:any?)
       pull_requests = pull_requests.map { |pr| "#{pr["title"]} (#{Formatter.url(pr["html_url"])})" }.join(", ")
     end

@@ -21,7 +21,6 @@ module Homebrew
       @new_formula = options[:new_formula] && !@versioned_formula
       @strict = options[:strict]
       @online = options[:online]
-      @build_stable = options[:build_stable]
       @git = options[:git]
       @display_cop_names = options[:display_cop_names]
       @only = options[:only]
@@ -234,6 +233,7 @@ module Homebrew
              dep_f.keg_only? &&
              dep_f.keg_only_reason.provided_by_macos? &&
              dep_f.keg_only_reason.applicable? &&
+             formula.requirements.none?(LinuxRequirement) &&
              !tap_audit_exception(:provided_by_macos_depends_on_allowlist, dep.name)
             new_formula_problem(
               "Dependency '#{dep.name}' is provided by macOS; " \
@@ -344,7 +344,7 @@ module Homebrew
       return unless @core_tap
 
       version = formula.version.to_s
-      return if version == "2.23"
+      return if version == OS::CI_GLIBC_VERSION
 
       problem "The glibc version must be #{version}, as this is the version used by our CI on Linux. " \
               "Glibc is for users who have a system Glibc with a lower version, " \
@@ -380,6 +380,7 @@ module Homebrew
       return unless DevelopmentTools.curl_handles_most_https_certificates?
 
       if (http_content_problem = curl_check_http_content(homepage,
+                                                         "homepage URL",
                                                          user_agents:   [:browser, :default],
                                                          check_content: true,
                                                          strict:        @strict))
@@ -550,6 +551,9 @@ module Homebrew
         version_prefix = stable.version.major_minor
         return if tap_audit_exception :gnome_devel_allowlist, formula.name, version_prefix
         return if stable_url_version < Version.create("1.0")
+        # All minor versions are stable in the new GNOME version scheme (which starts at version 40.0)
+        # https://discourse.gnome.org/t/new-gnome-versioning-scheme/4235
+        return if stable_url_version >= Version.create("40.0")
         return if stable_url_minor_version.even?
 
         problem "#{stable.version} is a development release"

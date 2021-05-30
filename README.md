@@ -6,7 +6,7 @@ Features, usage and installation instructions are [summarised on the homepage](h
 
 ## What Packages Are Available?
 
-1. Type `brew search` for a list.
+1. Type `brew formulae` for a list.
 2. Or visit [formulae.brew.sh](https://formulae.brew.sh) to browse packages online.
 3. Or use `brew search --desc <keyword>` to browse packages from the command line.
 
@@ -66,7 +66,7 @@ Homebrew's [Technical Steering Committee](https://docs.brew.sh/Homebrew-Governan
 
 Homebrew's Linux maintainers are [Daniel Nachun](https://github.com/danielnachun), [Dawid Dziurla](https://github.com/dawidd6), [Issy Long](https://github.com/issyl0), [Jonathan Chang](https://github.com/jonchang), [Michka Popoff](https://github.com/iMichka) and [Shaun Jackman](https://github.com/sjackman).
 
-Homebrew's other current maintainers are [Alexander Bayandin](https://github.com/bayandin), [Caleb Xu](https://github.com/alebcay), [Carlo Cabrera](https://github.com/carlocab), [Claudia Pellegrino](https://github.com/claui), [Dustin Rodrigues](https://github.com/dtrodrigues), [Eric Knibbe](https://github.com/EricFromCanada), [Maxim Belkin](https://github.com/maxim-belkin), [Miccal Matthews](https://github.com/miccal), [Nanda H Krishna](https://github.com/nandahkrishna), [Randall](https://github.com/ran-dall), [Sam Ford](https://github.com/samford), [Seeker](https://github.com/SeekingMeaning), [Steve Peters](https://github.com/scpeters), [Thierry Moisan](https://github.com/Moisan), [Tom Schoonjans](https://github.com/tschoonj), [Vítor Galvão](https://github.com/vitorgalvao) and [rui](https://github.com/chenrui333).
+Homebrew's other current maintainers are [Alexander Bayandin](https://github.com/bayandin), [Caleb Xu](https://github.com/alebcay), [Carlo Cabrera](https://github.com/carlocab), [Claudia Pellegrino](https://github.com/claui), [Dustin Rodrigues](https://github.com/dtrodrigues), [Eric Knibbe](https://github.com/EricFromCanada), [Maxim Belkin](https://github.com/maxim-belkin), [Miccal Matthews](https://github.com/miccal), [Michael Cho](https://github.com/cho-m), [Nanda H Krishna](https://github.com/nandahkrishna), [Randall](https://github.com/ran-dall), [Sam Ford](https://github.com/samford), [Steve Peters](https://github.com/scpeters), [Thierry Moisan](https://github.com/Moisan), [Tom Schoonjans](https://github.com/tschoonj), [Vítor Galvão](https://github.com/vitorgalvao) and [rui](https://github.com/chenrui333).
 
 Former maintainers with significant contributions include [Jan Viljanen](https://github.com/javian), [JCount](https://github.com/jcount), [commitay](https://github.com/commitay), [Dominyk Tiller](https://github.com/DomT4), [Tim Smith](https://github.com/tdsmith), [Baptiste Fontaine](https://github.com/bfontaine), [Xu Cheng](https://github.com/xu-cheng), [Martin Afanasjew](https://github.com/UniqMartin), [Brett Koonce](https://github.com/asparagui), [Charlie Sharpsteen](https://github.com/Sharpie), [Jack Nagel](https://github.com/jacknagel), [Adam Vandenberg](https://github.com/adamv), [Andrew Janke](https://github.com/apjanke), [Alex Dunn](https://github.com/dunn), [neutric](https://github.com/neutric), [Tomasz Pajor](https://github.com/nijikon), [Uladzislau Shablinski](https://github.com/vladshablinsky), [Alyssa Ross](https://github.com/alyssais), [ilovezfs](https://github.com/ilovezfs), [Chongyu Zhu](https://github.com/lembacon) and Homebrew's creator: [Max Howell](https://github.com/mxcl).
 
@@ -86,13 +86,9 @@ Our macOS continuous integration infrastructure is hosted by [MacStadium's Orka]
 
 [![Powered by MacStadium](https://cloud.githubusercontent.com/assets/125011/22776032/097557ac-eea6-11e6-8ba8-eff22dfd58f1.png)](https://www.macstadium.com)
 
-Our bottles (binary packages) are hosted by [Bintray](https://bintray.com/homebrew).
-
-[![Downloads by Bintray](https://bintray.com/docs/images/downloads_by_bintray_96.png)](https://bintray.com/homebrew)
-
 Secure password storage and syncing is provided by [1Password for Teams](https://1password.com/teams/).
 
-[![1Password](https://1password.com/img/press/logo.e5bf08b08157e08a1b9112fcd58a54b6.svg)](https://1password.com)
+[![1Password](https://1password.com/img/redesign/press/logo.c757be5591a513da9c768f8b80829318.svg)](https://1password.com)
 
 Homebrew is a member of the [Software Freedom Conservancy](https://sfconservancy.org).
 

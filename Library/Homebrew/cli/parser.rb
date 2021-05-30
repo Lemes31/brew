@@ -136,6 +136,7 @@ module Homebrew
         @usage_banner = nil
         @hide_from_man_page = false
         @formula_options = false
+        @cask_options = false
 
         self.class.global_options.each do |short, long, desc|
           switch short, long, description: desc, env: option_to_name(long), method: :on_tail
@@ -206,7 +207,8 @@ module Homebrew
         end
       end
 
-      def flag(*names, description: nil, replacement: nil, required_for: nil, depends_on: nil)
+      def flag(*names, description: nil, replacement: nil, required_for: nil,
+               depends_on: nil, hidden: false)
         required, flag_type = if names.any? { |name| name.end_with? "=" }
           [OptionParser::REQUIRED_ARGUMENT, :required_flag]
         else
@@ -215,7 +217,7 @@ module Homebrew
         names.map! { |name| name.chomp "=" }
         description = option_to_description(*names) if description.nil?
         if replacement.nil?
-          process_option(*names, description, type: flag_type)
+          process_option(*names, description, type: flag_type, hidden: hidden)
         else
           description += " (disabled#{"; replaced by #{replacement}" if replacement.present?})"
         end
@@ -328,9 +330,10 @@ module Homebrew
           check_named_args(named_args)
         end
 
-        @args.freeze_named_args!(named_args)
+        @args.freeze_named_args!(named_args, cask_options: @cask_options)
         @args.freeze_remaining_args!(non_options.empty? ? remaining : [*remaining, "--", non_options])
         @args.freeze_processed_options!(@processed_options)
+        @args.freeze
 
         @args_parsed = true
 
@@ -357,6 +360,7 @@ module Homebrew
           send(method, *args, **options)
           conflicts "--formula", args.last
         end
+        @cask_options = true
       end
 
       sig { void }
@@ -393,42 +397,16 @@ module Homebrew
         end
       end
 
-      def max_named(count)
-        odeprecated "`max_named`", "`named_args max:`"
-
-        raise TypeError, "Unsupported type #{count.class.name} for max_named" unless count.is_a?(Integer)
-
-        @max_named_args = count
+      def max_named(_count)
+        odisabled "`max_named`", "`named_args max:`"
       end
 
-      def min_named(count_or_type)
-        odeprecated "`min_named`", "`named_args min:`"
-
-        case count_or_type
-        when Integer
-          @min_named_args = count_or_type
-          @named_args_type = nil
-        when Symbol
-          @min_named_args = 1
-          @named_args_type = count_or_type
-        else
-          raise TypeError, "Unsupported type #{count_or_type.class.name} for min_named"
-        end
+      def min_named(_count_or_type)
+        odisabled "`min_named`", "`named_args min:`"
       end
 
-      def named(count_or_type)
-        odeprecated "`named`", "`named_args`"
-
-        case count_or_type
-        when Integer
-          @max_named_args = @min_named_args = count_or_type
-          @named_args_type = nil
-        when Symbol
-          @max_named_args = @min_named_args = 1
-          @named_args_type = count_or_type
-        else
-          raise TypeError, "Unsupported type #{count_or_type.class.name} for named"
-        end
+      def named(_count_or_type)
+        odisabled "`named`", "`named_args`"
       end
 
       sig { void }
@@ -518,7 +496,11 @@ module Homebrew
 
       def disable_switch(*names)
         names.each do |name|
-          @args.delete_field("#{option_to_name(name)}?")
+          @args["#{option_to_name(name)}?"] = if name.start_with?("--[no-]")
+            nil
+          else
+            false
+          end
         end
       end
 
@@ -612,10 +594,18 @@ module Homebrew
         raise exception if exception
       end
 
-      def process_option(*args, type:)
+      def process_option(*args, type:, hidden: false)
         option, = @parser.make_switch(args)
         @processed_options.reject! { |existing| existing.second == option.long.first } if option.long.first.present?
         @processed_options << [option.short.first, option.long.first, option.arg, option.desc.first]
+
+        if type == :switch
+          disable_switch(*args)
+        else
+          args.each do |name|
+            @args[option_to_name(name)] = nil
+          end
+        end
 
         return if self.class.global_options.include? [option.short.first, option.long.first, option.desc.first]
 

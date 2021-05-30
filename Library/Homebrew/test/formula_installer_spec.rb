@@ -51,7 +51,8 @@ describe FormulaInstaller do
   specify "basic installation" do
     temporary_install(Testball.new) do |f|
       # Test that things made it into the Keg
-      expect(f.prefix/"readme").to exist
+      # "readme" is empty, so it should not be installed
+      expect(f.prefix/"readme").not_to exist
 
       expect(f.bin).to be_a_directory
       expect(f.bin.children.count).to eq(3)
@@ -215,6 +216,86 @@ describe FormulaInstaller do
       formula_installer.install
       expect(formula_installer).to receive(:audit_installed).and_call_original
       formula_installer.caveats
+    end
+  end
+
+  describe "#install_service" do
+    it "works if plist is set" do
+      formula = Testball.new
+      path = formula.plist_path
+      formula.prefix.mkpath
+
+      expect(formula).to receive(:plist).twice.and_return("PLIST")
+      expect(formula).to receive(:plist_path).and_call_original
+
+      installer = described_class.new(formula)
+      expect {
+        installer.install_service
+      }.not_to output(/Error: Failed to install service files/).to_stderr
+
+      expect(path).to exist
+    end
+
+    it "works if service is set" do
+      formula = Testball.new
+      plist_path = formula.plist_path
+      service_path = formula.systemd_service_path
+      service = Homebrew::Service.new(formula)
+      formula.prefix.mkpath
+
+      expect(formula).to receive(:plist).and_return(nil)
+      expect(formula).to receive(:service?).exactly(3).and_return(true)
+      expect(formula).to receive(:service).twice.and_return(service)
+      expect(formula).to receive(:plist_path).and_call_original
+      expect(formula).to receive(:systemd_service_path).and_call_original
+
+      expect(service).to receive(:to_plist).and_return("plist")
+      expect(service).to receive(:to_systemd_unit).and_return("unit")
+
+      installer = described_class.new(formula)
+      expect {
+        installer.install_service
+      }.not_to output(/Error: Failed to install service files/).to_stderr
+
+      expect(plist_path).to exist
+      expect(service_path).to exist
+    end
+
+    it "returns without definition" do
+      formula = Testball.new
+      path = formula.plist_path
+      formula.prefix.mkpath
+
+      expect(formula).to receive(:plist).and_return(nil)
+      expect(formula).to receive(:service?).exactly(3).and_return(nil)
+      expect(formula).not_to receive(:plist_path)
+      expect(formula).not_to receive(:to_systemd_unit)
+
+      installer = described_class.new(formula)
+      expect {
+        installer.install_service
+      }.not_to output(/Error: Failed to install service files/).to_stderr
+
+      expect(path).not_to exist
+    end
+
+    it "errors with duplicate definition" do
+      formula = Testball.new
+      path = formula.plist_path
+      formula.prefix.mkpath
+
+      expect(formula).to receive(:plist).and_return("plist")
+      expect(formula).to receive(:service?).and_return(true)
+      expect(formula).not_to receive(:service)
+      expect(formula).not_to receive(:plist_path)
+
+      installer = described_class.new(formula)
+      expect {
+        installer.install_service
+      }.to output("Error: Formula specified both service and plist\n").to_stderr
+
+      expect(Homebrew).to have_failed
+      expect(path).not_to exist
     end
   end
 end

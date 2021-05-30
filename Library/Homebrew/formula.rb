@@ -14,6 +14,7 @@ require "build_options"
 require "formulary"
 require "software_spec"
 require "livecheck"
+require "service"
 require "install_renamed"
 require "pkg_version"
 require "keg"
@@ -165,7 +166,7 @@ class Formula
   # during the installation of a {Formula}. This is annoying but the result of
   # state that we're trying to eliminate.
   # @return [BuildOptions]
-  attr_accessor :build
+  attr_reader :build
 
   # Whether this formula should be considered outdated
   # if the target of the alias it was installed with has since changed.
@@ -222,10 +223,28 @@ class Formula
     spec = send(spec_sym)
     raise FormulaSpecificationError, "#{spec_sym} spec is not available for #{full_name}" unless spec
 
+    old_spec_sym = @active_spec_sym
     @active_spec = spec
     @active_spec_sym = spec_sym
     validate_attributes!
     @build = active_spec.build
+
+    return if spec_sym == old_spec_sym
+
+    Dependency.clear_cache
+    Requirement.clear_cache
+  end
+
+  # @private
+  def build=(build_options)
+    old_options = @build
+    @build = build_options
+
+    return if old_options.used_options == build_options.used_options &&
+              old_options.unused_options == build_options.unused_options
+
+    Dependency.clear_cache
+    Requirement.clear_cache
   end
 
   private
@@ -345,7 +364,7 @@ class Formula
   # @private
   sig { returns(T.nilable(Bottle)) }
   def bottle
-    Bottle.new(self, bottle_specification) if bottled?
+    @bottle ||= Bottle.new(self, bottle_specification) if bottled?
   end
 
   # The description of the software.
@@ -372,6 +391,11 @@ class Formula
   # @!method livecheckable?
   # @see .livecheckable?
   delegate livecheckable?: :"self.class"
+
+  # Is a service specification defined for the software?
+  # @!method service?
+  # @see .service?
+  delegate service?: :"self.class"
 
   # The version for the currently active {SoftwareSpec}.
   # The version is autodetected from the URL and/or tag so only needs to be
@@ -938,10 +962,29 @@ class Formula
     "homebrew.mxcl.#{name}"
   end
 
+  # The generated service name.
+  sig { returns(String) }
+  def service_name
+    "homebrew.#{name}"
+  end
+
   # The generated launchd {.plist} file path.
   sig { returns(Pathname) }
   def plist_path
     prefix/"#{plist_name}.plist"
+  end
+
+  # The generated systemd {.service} file path.
+  sig { returns(Pathname) }
+  def systemd_service_path
+    prefix/"#{service_name}.service"
+  end
+
+  # The service specification of the software.
+  def service
+    return unless service?
+
+    Homebrew::Service.new(self, &self.class.service)
   end
 
   # @private
@@ -1426,6 +1469,7 @@ class Formula
       -DCMAKE_FIND_FRAMEWORK=LAST
       -DCMAKE_VERBOSE_MAKEFILE=ON
       -Wno-dev
+      -DBUILD_TESTING=OFF
     ]
 
     # Avoid false positives for clock_gettime support on 10.11.
@@ -1439,9 +1483,11 @@ class Formula
   end
 
   # Standard parameters for Go builds.
-  sig { returns(T::Array[T.any(String, Pathname)]) }
-  def std_go_args
-    ["-trimpath", "-o", bin/name]
+  sig { params(ldflags: T.nilable(String)).returns(T::Array[String]) }
+  def std_go_args(ldflags: nil)
+    args = ["-trimpath", "-o=#{bin/name}"]
+    args += ["-ldflags=#{ldflags}"] if ldflags
+    args
   end
 
   # Standard parameters for cabal-v2 builds.
@@ -1487,6 +1533,12 @@ class Formula
       ".#{version}"
     end
     "#{name}#{infix}.dylib"
+  end
+
+  # Executable/Library RPATH according to platform conventions.
+  sig { returns(String) }
+  def rpath
+    "@loader_path/../lib"
   end
 
   # an array of all core {Formula} names
@@ -1657,13 +1709,15 @@ class Formula
   # means if a depends on b then b will be ordered before a in this list
   # @private
   def recursive_dependencies(&block)
-    Dependency.expand(self, &block)
+    cache_key = "Formula#recursive_dependencies" unless block
+    Dependency.expand(self, cache_key: cache_key, &block)
   end
 
   # The full set of Requirements for this formula's dependency tree.
   # @private
   def recursive_requirements(&block)
-    Requirement.expand(self, &block)
+    cache_key = "Formula#recursive_requirements" unless block
+    Requirement.expand(self, cache_key: cache_key, &block)
   end
 
   # Returns a Keg for the opt_prefix or installed_prefix if they exist.
@@ -1861,17 +1915,23 @@ class Formula
     bottle_spec = stable.bottle_specification
     hash = {
       "rebuild"  => bottle_spec.rebuild,
-      "cellar"   => (cellar = bottle_spec.cellar).is_a?(Symbol) ? cellar.inspect : cellar,
-      "prefix"   => bottle_spec.prefix,
       "root_url" => bottle_spec.root_url,
       "files"    => {},
     }
     bottle_spec.collector.each_key do |os|
-      bottle_url = "#{bottle_spec.root_url}/#{Bottle::Filename.create(self, os, bottle_spec.rebuild).bintray}"
-      checksum = bottle_spec.collector[os][:checksum]
+      collector_os = bottle_spec.collector[os]
+      os_cellar = collector_os[:cellar]
+      os_cellar = os_cellar.is_a?(Symbol) ? os_cellar.inspect : os_cellar
+
+      checksum = collector_os[:checksum].hexdigest
+      filename = Bottle::Filename.create(self, os, bottle_spec.rebuild)
+      path, = Utils::Bottles.path_resolved_basename(bottle_spec.root_url, name, checksum, filename)
+      url = "#{bottle_spec.root_url}/#{path}"
+
       hash["files"][os] = {
-        "url"    => bottle_url,
-        "sha256" => checksum.hexdigest,
+        "cellar" => os_cellar,
+        "url"    => url,
+        "sha256" => checksum,
       }
     end
     hash
@@ -1959,6 +2019,9 @@ class Formula
       import site; site.addsitedir("#{HOMEBREW_PREFIX}/lib/python2.7/site-packages")
       import sys, os; sys.path = (os.environ["PYTHONPATH"].split(os.pathsep) if "PYTHONPATH" in os.environ else []) + ["#{HOMEBREW_PREFIX}/lib/python2.7/site-packages"] + sys.path
     PYTHON
+
+    # Don't let bazel write to tmp directories we don't control or clean.
+    (home/".bazelrc").write "startup --output_user_root=#{home}/_bazel"
   end
 
   # Returns a list of Dependency objects that are declared in the formula.
@@ -2118,8 +2181,10 @@ class Formula
   def eligible_kegs_for_cleanup(quiet: false)
     eligible_for_cleanup = []
     if latest_version_installed?
-      eligible_kegs = if head? && (head_prefix = latest_head_prefix)
-        installed_kegs - [Keg.new(head_prefix)]
+      eligible_kegs = if head?
+        head, stable = installed_kegs.partition { |k| k.version.head? }
+        # Remove newest head and stable kegs
+        head.sort_by(&:version).slice(0...-1) + stable.sort_by(&:version).slice(0...-1)
       else
         installed_kegs.select do |keg|
           tab = Tab.for_keg(keg)
@@ -2184,6 +2249,20 @@ class Formula
 
   def fetch_patches
     patchlist.select(&:external?).each(&:fetch)
+  end
+
+  sig { void }
+  def fetch_bottle_tab
+    return unless bottled?
+
+    T.must(bottle).fetch_tab
+  end
+
+  sig { returns(Hash) }
+  def bottle_tab_attributes
+    return {} unless bottled?
+
+    T.must(bottle).tab_attributes
   end
 
   private
@@ -2341,6 +2420,13 @@ class Formula
     # false otherwise, and is used by livecheck.
     def livecheckable?
       @livecheckable == true
+    end
+
+    # Whether a service specification is defined or not.
+    # It returns true when a service block is present in the {Formula} and
+    # false otherwise, and is used by service.
+    def service?
+      @service_block.present?
     end
 
     # The `:startup` attribute set by {.plist_options}.
@@ -2807,6 +2893,21 @@ class Formula
       @livecheck.instance_eval(&block)
     end
 
+    # @!attribute [w] service
+    # Service can be used to define services.
+    # This method evaluates the DSL specified in the service block of the
+    # {Formula} (if it exists) and sets the instance variables of a Service
+    # object accordingly. This is used by `brew install` to generate a plist.
+    #
+    # <pre>service do
+    #   run [opt_bin/"foo"]
+    # end</pre>
+    def service(&block)
+      return @service_block unless block
+
+      @service_block = block
+    end
+
     # Defines whether the {Formula}'s bottle can be used on the given Homebrew
     # installation.
     #
@@ -2819,8 +2920,32 @@ class Formula
     #
     # If `satisfy` returns `false` then a bottle will not be used and instead
     # the {Formula} will be built from source and `reason` will be printed.
-    def pour_bottle?(&block)
+    #
+    # Alternatively, a preset reason can be passed as a symbol:
+    # <pre>pour_bottle? only_if: :clt_installed</pre>
+    def pour_bottle?(only_if: nil, &block)
       @pour_bottle_check = PourBottleCheck.new(self)
+
+      if only_if.present? && block.present?
+        raise ArgumentError, "Do not pass both a preset condition and a block to `pour_bottle?`"
+      end
+
+      block ||= case only_if
+      when :clt_installed
+        lambda do |_|
+          on_macos do
+            T.cast(self, PourBottleCheck).reason(+<<~EOS)
+              The bottle needs the Apple Command Line Tools to be installed.
+                You can install them, if desired, with:
+                  xcode-select --install
+            EOS
+            T.cast(self, PourBottleCheck).satisfy { MacOS::CLT.installed? }
+          end
+        end
+      else
+        raise ArgumentError, "Invalid preset `pour_bottle?` condition" if only_if.present?
+      end
+
       @pour_bottle_check.instance_eval(&block)
     end
 
@@ -2832,8 +2957,8 @@ class Formula
     # @see https://docs.brew.sh/Deprecating-Disabling-and-Removing-Formulae
     # @see DeprecateDisable::DEPRECATE_DISABLE_REASONS
     def deprecate!(date: nil, because: nil)
-      odeprecated "`deprecate!` without a reason", "`deprecate! because: \"reason\"`" if because.blank?
-      odeprecated "`deprecate!` without a date", "`deprecate! date: \"#{Date.today}\"`" if date.blank?
+      odisabled "`deprecate!` without a reason", "`deprecate! because: \"reason\"`" if because.blank?
+      odisabled "`deprecate!` without a date", "`deprecate! date: \"#{Date.today}\"`" if date.blank?
 
       @deprecation_date = Date.parse(date) if date.present?
 
@@ -2871,8 +2996,8 @@ class Formula
     # @see https://docs.brew.sh/Deprecating-Disabling-and-Removing-Formulae
     # @see DeprecateDisable::DEPRECATE_DISABLE_REASONS
     def disable!(date: nil, because: nil)
-      odeprecated "`disable!` without a reason", "`disable! because: \"reason\"`" if because.blank?
-      odeprecated "`disable!` without a date", "`disable! date: \"#{Date.today}\"`" if date.blank?
+      odisabled "`disable!` without a reason", "`disable! because: \"reason\"`" if because.blank?
+      odisabled "`disable!` without a date", "`disable! date: \"#{Date.today}\"`" if date.blank?
 
       @disable_date = Date.parse(date) if date.present?
 

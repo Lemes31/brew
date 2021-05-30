@@ -4,11 +4,11 @@
 require "cask/audit"
 
 describe Cask::Audit, :cask do
-  def include_msg?(messages, msg)
+  def include_msg?(problems, msg)
     if msg.is_a?(Regexp)
-      Array(messages).any? { |m| m =~ msg }
+      Array(problems).any? { |problem| problem[:message] =~ msg }
     else
-      Array(messages).include?(msg)
+      Array(problems).any? { |problem| problem[:message] == msg }
     end
   end
 
@@ -613,46 +613,47 @@ describe Cask::Audit, :cask do
       end
     end
 
-    describe "hosting with appcast checks" do
-      let(:message) { /please add an appcast/ }
+    describe "hosting with livecheck checks" do
+      let(:message) { /please add a livecheck/ }
 
-      context "when the download does not use hosting with an appcast" do
+      context "when the download does not use hosting with a livecheck" do
         let(:cask_token) { "basic-cask" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on SourceForge and has an appcast" do
+      context "when the download is hosted on SourceForge and has a livecheck" do
         let(:cask_token) { "sourceforge-with-appcast" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on SourceForge and does not have an appcast" do
+      context "when the download is hosted on SourceForge and does not have a livecheck" do
         let(:cask_token) { "sourceforge-correct-url-format" }
+        let(:online) { true }
 
         it { is_expected.to fail_with(message) }
       end
 
-      context "when the download is hosted on DevMate and has an appcast" do
+      context "when the download is hosted on DevMate and has a livecheck" do
         let(:cask_token) { "devmate-with-appcast" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on DevMate and does not have an appcast" do
+      context "when the download is hosted on DevMate and does not have a livecheck" do
         let(:cask_token) { "devmate-without-appcast" }
 
         it { is_expected.to fail_with(message) }
       end
 
-      context "when the download is hosted on HockeyApp and has an appcast" do
+      context "when the download is hosted on HockeyApp and has a livecheck" do
         let(:cask_token) { "hockeyapp-with-appcast" }
 
         it { is_expected.not_to fail_with(message) }
       end
 
-      context "when the download is hosted on HockeyApp and does not have an appcast" do
+      context "when the download is hosted on HockeyApp and does not have a livecheck" do
         let(:cask_token) { "hockeyapp-without-appcast" }
 
         it { is_expected.to fail_with(message) }
@@ -795,7 +796,17 @@ describe Cask::Audit, :cask do
           end
         end
 
-        context "when doing the audit" do
+        context "when doing an offline audit" do
+          let(:online) { false }
+
+          it "does not evaluate the block" do
+            expect(run).not_to pass
+          end
+        end
+
+        context "when doing and online audit" do
+          let(:online) { true }
+
           it "evaluates the block" do
             expect(run).to fail_with(/Boom/)
           end

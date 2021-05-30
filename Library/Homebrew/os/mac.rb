@@ -60,6 +60,15 @@ module OS
       version >= "12"
     end
 
+    sig { returns(String) }
+    def preferred_perl_version
+      if version >= :big_sur
+        "5.30"
+      else
+        "5.18"
+      end
+    end
+
     def languages
       return @languages if @languages
 
@@ -118,7 +127,7 @@ module OS
     def sdk_for_formula(f, v = nil, check_only_runtime_requirements: false)
       # If the formula requires Xcode, don't return the CLT SDK
       # If check_only_runtime_requirements is true, don't necessarily return the
-      # Xcode SDK if the XcodeRequirement is only a build or test requirment.
+      # Xcode SDK if the XcodeRequirement is only a build or test requirement.
       return Xcode.sdk if f.requirements.any? do |req|
         next false unless req.is_a? XcodeRequirement
         next false if check_only_runtime_requirements && req.build? && !req.test?

@@ -44,8 +44,7 @@ module Homebrew
           description: "Treat all named arguments as formulae.",
         }],
         [:flag, "--env=", {
-          description: "If `std` is passed, use the standard build environment instead of superenv. If `super` is " \
-                       "passed, use superenv even if the formula specifies the standard build environment.",
+          description: "Disabled other than for internal Homebrew use.",
         }],
         [:switch, "--ignore-dependencies", {
           description: "An unsupported Homebrew development flag to skip installing any dependencies of any kind. " \
@@ -132,8 +131,10 @@ module Homebrew
     args = install_args.parse
 
     if args.env.present?
-      # TODO: use `replacement: false` for 3.1.0.
-      odeprecated "brew install --env", "`env :std` in specific formula files"
+      # Can't use `replacement: false` because `install_args` are used by
+      # `build.rb`. Instead, `hide_from_man_page` and don't do anything with
+      # this argument here.
+      odisabled "brew install --env", "`env :std` in specific formula files"
     end
 
     args.named.each do |name|
@@ -176,7 +177,15 @@ module Homebrew
 
     # if the user's flags will prevent bottle only-installations when no
     # developer tools are available, we need to stop them early on
-    FormulaInstaller.prevent_build_flags(args)
+    unless DevelopmentTools.installed?
+      build_flags = []
+
+      build_flags << "--HEAD" if args.HEAD?
+      build_flags << "--build-bottle" if args.build_bottle?
+      build_flags << "--build-from-source" if args.build_from_source?
+
+      raise BuildFlagsError.new(build_flags, bottled: formulae.all?(&:bottled?)) if build_flags.present?
+    end
 
     installed_formulae = []
 
@@ -316,7 +325,19 @@ module Homebrew
       Cleanup.install_formula_clean!(f)
     end
 
-    Upgrade.check_installed_dependents(installed_formulae, args: args)
+    Upgrade.check_installed_dependents(
+      installed_formulae,
+      flags:                      args.flags_only,
+      installed_on_request:       args.named.present?,
+      force_bottle:               args.force_bottle?,
+      build_from_source_formulae: args.build_from_source_formulae,
+      interactive:                args.interactive?,
+      keep_tmp:                   args.keep_tmp?,
+      force:                      args.force?,
+      debug:                      args.debug?,
+      quiet:                      args.quiet?,
+      verbose:                    args.verbose?,
+    )
 
     Homebrew.messages.display_messages(display_times: args.display_times?)
   rescue FormulaUnreadableError, FormulaClassUnavailableError,
@@ -386,7 +407,6 @@ module Homebrew
         only_deps:                  args.only_dependencies?,
         include_test_formulae:      args.include_test_formulae,
         build_from_source_formulae: args.build_from_source_formulae,
-        env:                        args.env,
         cc:                         args.cc,
         git:                        args.git?,
         interactive:                args.interactive?,

@@ -91,10 +91,7 @@ module Homebrew
         "git", "-C", HOMEBREW_REPOSITORY, "tag", "--list", "--sort=-version:refname", "*.*"
       ).lines.first.chomp
 
-      if new_tag != old_tag
-        Settings.write "latesttag", new_tag
-        new_repository_version = new_tag
-      end
+      new_repository_version = new_tag if new_tag != old_tag
     end
 
     Homebrew.failed = true if ENV["HOMEBREW_UPDATE_FAILED"]
@@ -157,7 +154,8 @@ module Homebrew
             puts_stdout_or_stderr
             puts_stdout_or_stderr <<~EOS
               You have #{msg} installed.
-              You can update #{update_pronoun} with #{Tty.bold}brew upgrade#{Tty.reset}.
+              You can upgrade #{update_pronoun} with #{Tty.bold}brew upgrade#{Tty.reset}
+              or list #{update_pronoun} with #{Tty.bold}brew outdated#{Tty.reset}.
             EOS
           end
         end
@@ -171,7 +169,7 @@ module Homebrew
     link_completions_manpages_and_docs
     Tap.each(&:link_completions_and_manpages)
 
-    failed_fetch_dirs = ENV["HOMEBREW_FAILED_FETCH_DIRS"]&.split("\n")
+    failed_fetch_dirs = ENV["HOMEBREW_MISSING_REMOTE_REF_DIRS"]&.split("\n")
     if failed_fetch_dirs.present?
       failed_fetch_taps = failed_fetch_dirs.map { |dir| Tap.from_path(dir) }
 
@@ -189,11 +187,13 @@ module Homebrew
     puts_stdout_or_stderr
     ohai_stdout_or_stderr "Homebrew was updated to version #{new_repository_version}"
     if new_repository_version.split(".").last == "0"
+      Settings.write "latesttag", new_repository_version
       puts_stdout_or_stderr <<~EOS
         More detailed release notes are available on the Homebrew Blog:
           #{Formatter.url("https://brew.sh/blog/#{new_repository_version}")}
       EOS
-    else
+    elsif !args.quiet?
+      Settings.write "latesttag", new_repository_version
       puts_stdout_or_stderr <<~EOS
         The changelog can be found at:
           #{Formatter.url("https://github.com/Homebrew/brew/releases/tag/#{new_repository_version}")}

@@ -15,9 +15,8 @@ describe Formulary do
         sha256 TESTBALL_SHA256
 
         bottle do
-          cellar :any_skip_relocation
           root_url "file://#{bottle_dir}"
-          sha256 "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149" => :#{Utils::Bottles.tag}
+          sha256 cellar: :any_skip_relocation, #{Utils::Bottles.tag}: "8f9aecd233463da6a4ea55f5f88fc5841718c013f3e2a7941350d6130f1dc149"
         end
 
         def install
@@ -58,6 +57,7 @@ describe Formulary do
 
   describe "::factory" do
     before do
+      formula_path.dirname.mkpath
       formula_path.write formula_content
     end
 
@@ -195,6 +195,7 @@ describe Formulary do
       end
 
       it "raises an error if a Formula is in multiple Taps" do
+        another_tap.path.mkpath
         (another_tap.path/"#{formula_name}.rb").write formula_content
 
         expect {
