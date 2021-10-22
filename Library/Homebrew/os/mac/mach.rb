@@ -2,7 +2,6 @@
 # frozen_string_literal: true
 
 require "macho"
-require "os/mac/architecture_list"
 
 # {Pathname} extension for dealing with Mach-O files.
 #
@@ -30,7 +29,7 @@ module MachOShim
 
       machos.each do |m|
         arch = case m.cputype
-        when :x86_64, :i386, :ppc64 then m.cputype
+        when :x86_64, :i386, :ppc64, :arm64, :arm then m.cputype
         when :ppc then :ppc7400
         else :dunno
         end
@@ -65,8 +64,7 @@ module MachOShim
   end
 
   def archs
-    # TODO: (3.2) remove ArchitectureListExtension
-    mach_data.map { |m| m.fetch :arch }.extend(ArchitectureListExtension)
+    mach_data.map { |m| m.fetch :arch }
   end
 
   def arch

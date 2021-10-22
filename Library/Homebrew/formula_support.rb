@@ -69,6 +69,7 @@ class BottleDisableReason
   def initialize(type, reason)
     @type = type
     @reason = reason
+    odeprecated "bottle :#{@type}" if valid?
   end
 
   def unneeded?

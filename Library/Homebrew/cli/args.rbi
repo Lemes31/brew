@@ -97,6 +97,15 @@ module Homebrew
       def upload?; end
 
       sig { returns(T::Boolean) }
+      def linux?; end
+
+      sig { returns(T::Boolean) }
+      def linux_self_hosted?; end
+
+      sig { returns(T::Boolean) }
+      def linux_wheezy?; end
+
+      sig { returns(T::Boolean) }
       def total?; end
 
       sig { returns(T::Boolean) }
@@ -151,6 +160,9 @@ module Homebrew
       def minor?; end
 
       sig { returns(T.nilable(String)) }
+      def bottle_tag; end
+
+      sig { returns(T.nilable(String)) }
       def tag; end
 
       sig { returns(T.nilable(String)) }
@@ -181,7 +193,13 @@ module Homebrew
       def limit; end
 
       sig { returns(T.nilable(String)) }
+      def start_with; end
+
+      sig { returns(T.nilable(String)) }
       def message; end
+
+      sig { returns(T.nilable(String)) }
+      def timeout; end
 
       sig { returns(T.nilable(String)) }
       def issue; end
@@ -275,6 +293,18 @@ module Homebrew
 
       sig { returns(T.nilable(String)) }
       def screen_saverdir; end
+
+      sig { returns(T.nilable(T::Array[String])) }
+      def groups; end
+
+      sig { returns(T::Boolean) }
+      def write_only?; end
+
+      sig { returns(T::Boolean) }
+      def custom_remote?; end
+
+      sig { returns(T::Boolean) }
+      def print_path?; end
     end
   end
 end

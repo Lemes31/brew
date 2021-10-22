@@ -26,10 +26,10 @@ command
 commands
 completions
 config
-configure
 create
 deps
 desc
+developer
 dispatch-build-bottle
 doctor
 dr
@@ -48,6 +48,7 @@ info
 install
 install-bundler-gems
 irb
+lc
 leaves
 link
 linkage
@@ -56,9 +57,7 @@ livecheck
 ln
 log
 ls
-man
 migrate
-mirror
 missing
 options
 outdated
@@ -72,7 +71,6 @@ prof
 readall
 reinstall
 release
-release-notes
 remove
 rm
 rubocop

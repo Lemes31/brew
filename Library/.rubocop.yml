@@ -39,11 +39,11 @@ Cask/NoDslVersion:
   Enabled: true
 
 Cask/StanzaGrouping:
-  Description: "Ensure that cask stanzas are grouped correctly. More info at https://github.com/Homebrew/homebrew-cask/blob/HEAD/doc/cask_language_reference/readme.md#stanza-order"
+  Description: "Ensure that cask stanzas are grouped correctly. More info at https://docs.brew.sh/Cask-Cookbook#stanza-order"
   Enabled: true
 
 Cask/StanzaOrder:
-  Description: "Ensure that cask stanzas are sorted correctly. More info at https://github.com/Homebrew/homebrew-cask/blob/HEAD/doc/cask_language_reference/readme.md#stanza-order"
+  Description: "Ensure that cask stanzas are sorted correctly. More info at https://docs.brew.sh/Cask-Cookbook#stanza-order"
   Enabled: true
 
 # enable all formulae audits
@@ -83,6 +83,21 @@ Naming/FileName:
 Naming/HeredocDelimiterNaming:
   ForbiddenDelimiters:
     - END, EOD, EOF
+
+Naming/InclusiveLanguage:
+  CheckStrings: true
+  FlaggedTerms:
+    # TODO: If possible, make this stricter.
+    slave:
+      AllowedRegex:
+        - "gitslave" # Used in formula `gitslave`
+        - "log_slave" # Used in formula `ssdb`
+        - "ssdb_slave" # Used in formula `ssdb`
+        - "var_slave" # Used in formula `ssdb`
+        - "patches/13_fix_scope_for_show_slave_status_data.patch" # Used in formula `mytop`
+    blacklist:
+      AllowedRegex:
+        - "--listBlacklist" # Used in formula `xmlsectool`
 
 Naming/MethodName:
   IgnoredPatterns:
@@ -232,6 +247,11 @@ Layout/ArgumentAlignment:
 Layout/CaseIndentation:
   EnforcedStyle: end
 
+# Need to allow #: for external commands.
+Layout/LeadingCommentSpace:
+  Exclude:
+    - "Taps/*/*/cmd/*.rb"
+
 # this is a bit less "floaty"
 Layout/EndAlignment:
   EnforcedStyleAlignWith: start_of_line
@@ -253,6 +273,12 @@ Layout/FirstHashElementIndentation:
 # favour parens-less DSL-style arguments
 Lint/AmbiguousBlockAssociation:
   Enabled: false
+
+Lint/RequireRelativeSelfPath:
+  # bugged on formula-analytics
+  # https://github.com/Homebrew/brew/pull/12152/checks?check_run_id=3755137378#step:15:60
+  Exclude:
+    - "Taps/homebrew/homebrew-formula-analytics/*/*.rb"
 
 Lint/DuplicateBranch:
   Exclude:

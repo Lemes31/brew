@@ -34,7 +34,6 @@ A few requests:
   Here are links to these guides:
     - Homebrew/brew: https://docs.brew.sh/Homebrew-brew-Maintainer-Guide
     - Homebrew/homebrew-core: https://docs.brew.sh/Homebrew-homebrew-core-Maintainer-Guide
-    - Homebrew/linuxbrew-core: https://docs.brew.sh/Homebrew-linuxbrew-core-Maintainer-Guide
     - Homebrew/homebrew-cask: https://docs.brew.sh/Homebrew-homebrew-cask-Maintainer-Guide
 - Still create your branches on your fork rather than in the main repository.
   Note GitHub's UI will create edits and reverts on the main repository if you
@@ -71,11 +70,11 @@ If they are elected to the Homebrew's [Project Leadership Committee](https://doc
 - Invite them to the [**@Homebrew/plc** team](https://github.com/orgs/Homebrew/teams/plc/members)
 - Invite them to [Google Analytics](https://analytics.google.com/analytics/web/#management/Settings/a76679469w115400090p120682403/%3Fm.page%3DAccountUsers/).
 - Invite them to the [`homebrew` private 1Password](https://homebrew.1password.com/people).
-- Make them owners on the [`machomebrew` private maintainers Slack](https://machomebrew.slack.com/admin)).
+- Make them owners on the [`machomebrew` private maintainers Slack](https://machomebrew.slack.com/admin).
 
 If there are problems, ask them to step down as a maintainer and revoke their access to all of the above.
 
-In interests of loosely verifying maintainer identity and building camaraderie, if you find yourself in the same town (e.g living, visiting or at a conference) as another Homebrew maintainer you should make the effort to meet up. If you do so, you can expense your meal (within [SFC reimbursable expense policies](https://sfconservancy.org/projects/policies/conservancy-travel-policy.html#meals-for-organizational-development). This is a more relaxed version of similar policies used by other projects, e.g. the Debian system to meet in person to sign keys with legal ID verification.
+In the interests of loosely verifying maintainer identity and building camaraderie, if you find yourself in the same town (e.g living, visiting or at a conference) as another Homebrew maintainer you should make the effort to meet up. If you do so, you can expense your meal (within [SFC reimbursable expense policies](https://sfconservancy.org/projects/policies/conservancy-travel-policy.html#meals-for-organizational-development)). This is a more relaxed version of similar policies used by other projects, e.g. the Debian system to meet in person to sign keys with legal ID verification.
 
 Now sit back, relax and let the new maintainers handle more of our contributions.
 

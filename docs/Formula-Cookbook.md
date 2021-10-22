@@ -8,6 +8,7 @@ A *formula* is a package definition written in Ruby. It can be created with `bre
 |----------------|------------------------------------------------------------|-----------------------------------------------------------------|
 | **Formula**    | The package definition                                     | `/usr/local/Homebrew/Library/Taps/homebrew/homebrew-core/Formula/foo.rb` |
 | **Keg**        | The installation prefix of a **Formula**                   | `/usr/local/Cellar/foo/0.1`                                     |
+| **Keg-only**   | A **Formula** is **Keg-only** if it is not linked into the Homebrew prefix | The [`openjdk` formula](https://github.com/Homebrew/homebrew-core/blob/HEAD/Formula/openjdk.rb) |
 | **opt prefix** | A symlink to the active version of a **Keg**               | `/usr/local/opt/foo `                                           |
 | **Cellar**     | All **Kegs** are installed here                            | `/usr/local/Cellar`                                             |
 | **Tap**        | A Git repository of **Formulae** and/or commands | `/usr/local/Homebrew/Library/Taps/homebrew/homebrew-core`   |
@@ -108,8 +109,6 @@ brew install --interactive foo
 You’re now at a new prompt with the tarball extracted to a temporary sandbox.
 
 Check the package’s `README`. Does the package install with `./configure`, `cmake`, or something else? Delete the commented out `cmake` lines if the package uses `./configure`.
-
-If no compilation is involved and there are no `:build` dependencies, add the line `bottle :unneeded` since bottles are unnecessary in this case. Otherwise, a `bottle` block will be added by Homebrew's CI upon merging the formula's pull-request.
 
 ### Check for dependencies
 
@@ -254,7 +253,7 @@ For Python formulae, running `brew update-python-resources <formula>` will autom
 ### Install the formula
 
 ```sh
-brew install --verbose --debug foo
+brew install --build-from-source --verbose --debug foo
 ```
 
 `--debug` will ask you to open an interactive shell if the build fails so you can try to figure out what went wrong.
@@ -362,7 +361,7 @@ Everything is built on Git, so contribution is easy:
 
 ```sh
 brew update # required in more ways than you think (initialises the brew git repository if you don't already have it)
-cd $(brew --repo homebrew/core)
+cd "$(brew --repository homebrew/core)"
 # Create a new git branch for your formula so your pull request is easy to
 # modify if any changes come up during review.
 git checkout -b <some-descriptive-name> origin/master
@@ -442,7 +441,7 @@ inreplace "path", before, after
 
 ```ruby
 inreplace "path" do |s|
-  s.gsub! /foo/, "bar"
+  s.gsub!(/foo/, "bar")
   s.gsub! "123", "456"
 end
 ```
@@ -543,7 +542,7 @@ Instead of `git diff | pbcopy`, for some editors `git diff >> path/to/your/formu
 
 ## Advanced formula tricks
 
-If anything isn’t clear, you can usually figure it out by `grep`ping the `$(brew --repo homebrew/core)` directory. Please submit a pull request to amend this document if you think it will help!
+If anything isn’t clear, you can usually figure it out by `grep`ping the `$(brew --repository homebrew/core)` directory. Please submit a pull request to amend this document if you think it will help!
 
 ### `livecheck` blocks
 
@@ -821,7 +820,13 @@ See our [Deprecating, Disabling, and Removing Formulae](Deprecating-Disabling-an
 
 ## Updating formulae
 
-Eventually a new version of the software will be released. In this case you should update the [`url`](https://rubydoc.brew.sh/Formula#url-class_method) and [`sha256`](https://rubydoc.brew.sh/Formula#sha256%3D-class_method). If a [`revision`](https://rubydoc.brew.sh/Formula#revision%3D-class_method) line exists outside any `bottle do` block it should be removed.
+Eventually a new version of the software will be released. In this case you should update the [`url`](https://rubydoc.brew.sh/Formula#url-class_method) and [`sha256`](https://rubydoc.brew.sh/Formula#sha256%3D-class_method). You can use:
+
+```sh
+brew bump-formula-pr foo
+```
+
+If a [`revision`](https://rubydoc.brew.sh/Formula#revision%3D-class_method) line exists outside any `bottle do` block it should be removed.
 
 Leave the `bottle do ... end`  block as-is; our CI system will update it when we pull your change.
 

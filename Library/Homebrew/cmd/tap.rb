@@ -35,6 +35,8 @@ module Homebrew
       switch "--force-auto-update",
              description: "Auto-update tap even if it is not hosted on GitHub. By default, only taps "\
                           "hosted on GitHub are auto-updated (for performance reasons)."
+      switch "--custom-remote",
+             description: "Install or change a tap with a custom remote. Useful for mirrors."
       switch "--repair",
              description: "Migrate tapped formulae from symlink-based to directory-based structure."
       switch "--list-pinned",
@@ -56,24 +58,17 @@ module Homebrew
     elsif args.no_named?
       puts Tap.names
     else
-      if args.full?
-        opoo "`brew tap --full` is now a no-op!"
-        # TODO: (3.2) Uncomment the following line and remove the `opoo` above
-        # odeprecated "`brew tap --full`"
-      end
+      odisabled "`brew tap --full`" if args.full?
 
-      if args.shallow?
-        opoo "`brew tap --shallow` is now a no-op!"
-        # TODO: (3.2) Uncomment the following line and remove the `opoo` above
-        # odeprecated "`brew tap --shallow`"
-      end
+      odisabled "`brew tap --shallow`" if args.shallow?
 
       tap = Tap.fetch(args.named.first)
       begin
         tap.install clone_target:      args.named.second,
                     force_auto_update: force_auto_update?(args: args),
+                    custom_remote:     args.custom_remote?,
                     quiet:             args.quiet?
-      rescue TapRemoteMismatchError => e
+      rescue TapRemoteMismatchError, TapNoCustomRemoteError => e
         odie e
       rescue TapAlreadyTappedError
         nil

@@ -143,8 +143,6 @@ describe Formulary do
         allow(described_class).to receive(:loader_for).and_call_original
         stub_formula_loader formula("gcc") { url "gcc-1.0" }
         stub_formula_loader formula("gcc@5") { url "gcc-5.0" }
-        stub_formula_loader formula("patchelf") { url "patchelf-1.0" }
-        allow(Formula["patchelf"]).to receive(:latest_version_installed?).and_return(true)
       end
 
       let(:installed_formula) { described_class.factory(formula_path) }
@@ -202,6 +200,29 @@ describe Formulary do
           described_class.factory(formula_name)
         }.to raise_error(TapFormulaAmbiguityError)
       end
+    end
+  end
+
+  describe "::map_formula_name_to_local_bottle_path" do
+    before do
+      formula_path.dirname.mkpath
+      formula_path.write formula_content
+    end
+
+    it "maps a reference to a new Formula" do
+      expect {
+        described_class.factory("formula-to-map")
+      }.to raise_error(FormulaUnavailableError)
+
+      ENV["HOMEBREW_INSTALL_FROM_API"] = nil
+      expect {
+        described_class.map_formula_name_to_local_bottle_path "formula-to-map", formula_path
+      }.to raise_error(UsageError, /HOMEBREW_INSTALL_FROM_API not set/)
+
+      ENV["HOMEBREW_INSTALL_FROM_API"] = "1"
+      described_class.map_formula_name_to_local_bottle_path "formula-to-map", formula_path
+
+      expect(described_class.factory("formula-to-map")).to be_kind_of(Formula)
     end
   end
 

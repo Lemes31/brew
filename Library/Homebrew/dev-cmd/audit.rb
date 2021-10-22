@@ -169,17 +169,16 @@ module Homebrew
     formula_results = audit_formulae.sort.map do |f|
       only = only_cops ? ["style"] : args.only
       options = {
-        new_formula:          new_formula,
-        strict:               strict,
-        online:               online,
-        git:                  args.git?,
-        only:                 only,
-        except:               args.except,
-        spdx_license_data:    spdx_license_data,
-        spdx_exception_data:  spdx_exception_data,
-        tap_audit_exceptions: f.tap&.audit_exceptions,
-        style_offenses:       style_offenses ? style_offenses.for_path(f.path) : nil,
-        display_cop_names:    args.display_cop_names?,
+        new_formula:         new_formula,
+        strict:              strict,
+        online:              online,
+        git:                 args.git?,
+        only:                only,
+        except:              args.except,
+        spdx_license_data:   spdx_license_data,
+        spdx_exception_data: spdx_exception_data,
+        style_offenses:      style_offenses ? style_offenses.for_path(f.path) : nil,
+        display_cop_names:   args.display_cop_names?,
       }.compact
 
       fa = FormulaAuditor.new(f, **options)
@@ -204,6 +203,7 @@ module Homebrew
     cask_results = if audit_casks.empty?
       {}
     else
+      require "cask/cmd/abstract_command"
       require "cask/cmd/audit"
 
       Cask::Cmd::Audit.audit_casks(

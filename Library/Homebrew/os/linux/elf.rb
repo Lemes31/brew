@@ -33,7 +33,7 @@ module ELFShim
   private_constant :ARCHITECTURE_POWERPC
   ARCHITECTURE_ARM = 0x28
   private_constant :ARCHITECTURE_ARM
-  ARCHITECTURE_X86_64 = 0x62
+  ARCHITECTURE_X86_64 = 0x3E
   private_constant :ARCHITECTURE_X86_64
   ARCHITECTURE_AARCH64 = 0xB7
   private_constant :ARCHITECTURE_AARCH64
@@ -101,11 +101,7 @@ module ELFShim
   def patch!(interpreter: nil, rpath: nil)
     return if interpreter.blank? && rpath.blank?
 
-    if HOMEBREW_PATCHELF_RB_WRITE
-      save_using_patchelf_rb interpreter, rpath
-    else
-      save_using_patchelf interpreter, rpath
-    end
+    save_using_patchelf_rb interpreter, rpath
   end
 
   def dynamic_elf?
@@ -157,16 +153,6 @@ module ELFShim
     end
   end
   private_constant :Metadata
-
-  def save_using_patchelf(new_interpreter, new_rpath)
-    patchelf = DevelopmentTools.locate "patchelf"
-    odie "Could not locate `patchelf`; please run `brew install patchelf`" if patchelf.blank?
-    args = []
-    args << "--set-interpreter" << new_interpreter if new_interpreter.present?
-    args << "--force-rpath" << "--set-rpath" << new_rpath if new_rpath.present?
-
-    Homebrew.safe_system(patchelf, *args, to_s)
-  end
 
   def save_using_patchelf_rb(new_interpreter, new_rpath)
     patcher = patchelf_patcher

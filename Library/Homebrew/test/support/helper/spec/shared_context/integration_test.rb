@@ -83,6 +83,7 @@ RSpec.shared_context "integration test" do # rubocop:disable RSpec/ContextWordin
       "HOMEBREW_INTEGRATION_TEST" => command_id_from_args(args),
       "HOMEBREW_TEST_TMPDIR"      => TEST_TMPDIR,
       "HOMEBREW_DEVELOPER"        => ENV["HOMEBREW_DEVELOPER"],
+      "HOMEBREW_DEV_CMD_RUN"      => "true",
       "GEM_HOME"                  => nil,
     )
 
@@ -162,7 +163,7 @@ RSpec.shared_context "integration test" do # rubocop:disable RSpec/ContextWordin
 
         # something here
       RUBY
-    when "foo", "gnupg", "patchelf"
+    when "foo", "gnupg"
       content = <<~RUBY
         url "https://brew.sh/#{name}-1.0"
       RUBY

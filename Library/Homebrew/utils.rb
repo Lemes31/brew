@@ -363,8 +363,8 @@ module Kernel
     editor = Homebrew::EnvConfig.editor
     return editor if editor
 
-    # Find Atom, Sublime Text, Textmate, BBEdit / TextWrangler, or vim
-    editor = %w[atom subl mate edit vim].find do |candidate|
+    # Find Atom, Sublime Text, VS Code, Textmate, BBEdit / TextWrangler, or vim
+    editor = %w[atom subl code mate edit vim].find do |candidate|
       candidate if which(candidate, ENV["HOMEBREW_PATH"])
     end
     editor ||= "vim"
@@ -399,14 +399,6 @@ module Kernel
       safe_system "gzip", path
       Pathname.new("#{path}.gz")
     end
-  end
-
-  # Returns array of architectures that the given command or library is built for.
-  def archs_for_command(cmd)
-    odisabled "archs_for_command"
-
-    cmd = which(cmd) unless Pathname.new(cmd).absolute?
-    Pathname.new(cmd).archs
   end
 
   def ignore_interrupts(_opt = nil)

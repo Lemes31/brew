@@ -77,25 +77,35 @@ RSpec.configure do |config|
     c.max_formatted_output_length = 200
   end
 
-  # Use rspec-retry in CI.
+  # Use rspec-retry to handle flaky tests.
+  config.default_sleep_interval = 1
+
+  # Don't make retries as noisy unless in CI.
   if ENV["CI"]
     config.verbose_retry = true
     config.display_try_failure_messages = true
-    config.default_retry_count = 2
-    config.default_sleep_interval = 1
+  end
 
-    config.around(:each, :integration_test) do |example|
-      example.metadata[:timeout] ||= 120
-      example.run
-    end
+  # Don't want the nicer default retry behaviour when using BuildPulse to
+  # identify flaky tests.
+  config.default_retry_count = 2 unless ENV["BUILDPULSE"]
 
-    config.around(:each, :needs_network) do |example|
-      example.metadata[:timeout] ||= 120
-      example.metadata[:retry] ||= 4
-      example.metadata[:retry_wait] ||= 2
-      example.metadata[:exponential_backoff] ||= true
-      example.run
-    end
+  # Increase timeouts for integration tests (as we expect them to take longer).
+  config.around(:each, :integration_test) do |example|
+    example.metadata[:timeout] ||= 120
+    example.run
+  end
+
+  config.around(:each, :needs_network) do |example|
+    example.metadata[:timeout] ||= 120
+
+    # Don't want the nicer default retry behaviour when using BuildPulse to
+    # identify flaky tests.
+    example.metadata[:retry] ||= 4 unless ENV["BUILDPULSE"]
+
+    example.metadata[:retry_wait] ||= 2
+    example.metadata[:exponential_backoff] ||= true
+    example.run
   end
 
   # Never truncate output objects.
@@ -136,7 +146,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each, :needs_svn) do
-    svn_shim = HOMEBREW_SHIMS_PATH/"scm/svn"
+    svn_shim = HOMEBREW_SHIMS_PATH/"shared/svn"
     skip "Subversion is not installed." unless quiet_system svn_shim, "--version"
 
     svn_shim_path = Pathname(Utils.popen_read(svn_shim, "--homebrew=print-path").chomp.presence)
@@ -157,6 +167,15 @@ RSpec.configure do |config|
     ENV["PATH"] = PATH.new(ENV["PATH"])
                       .append(svn.dirname)
                       .append(svnadmin.dirname)
+  end
+
+  config.before(:each, :needs_tls13) do
+    begin
+      curl = Utils::Curl.curl_executable(use_homebrew_curl: OS.mac?)
+    rescue FormulaUnavailableError
+      skip "curl formula not available"
+    end
+    skip "Requires curl with TLS 1.3 support." unless quiet_system curl, "--tlsv1.3", "--head", "https://brew.sh/"
   end
 
   config.before(:each, :needs_unzip) do

@@ -305,7 +305,7 @@ module Cask
       add_error "Casks with `version :latest` should not use `auto_updates`."
     end
 
-    LIVECHECK_REFERENCE_URL = "https://github.com/Homebrew/homebrew-cask/blob/HEAD/doc/cask_language_reference/stanzas/livecheck.md"
+    LIVECHECK_REFERENCE_URL = "https://docs.brew.sh/Cask-Cookbook#stanza-livecheck"
 
     def check_hosting_with_livecheck(livecheck_result:)
       return if block_url_offline? || cask.appcast || cask.livecheckable?
@@ -341,7 +341,7 @@ module Cask
       check_download_url_format
     end
 
-    SOURCEFORGE_OSDN_REFERENCE_URL = "https://github.com/Homebrew/homebrew-cask/blob/HEAD/doc/cask_language_reference/stanzas/url.md#sourceforgeosdn-urls"
+    SOURCEFORGE_OSDN_REFERENCE_URL = "https://docs.brew.sh/Cask-Cookbook#sourceforgeosdn-urls"
 
     def check_download_url_format
       odebug "Auditing URL format"
@@ -426,7 +426,7 @@ module Cask
       cask.url.from_block?
     end
 
-    VERIFIED_URL_REFERENCE_URL = "https://github.com/Homebrew/homebrew-cask/blob/master/doc/cask_language_reference/stanzas/url.md#when-url-and-homepage-hostnames-differ-add-verified"
+    VERIFIED_URL_REFERENCE_URL = "https://docs.brew.sh/Cask-Cookbook#when-url-and-homepage-hostnames-differ-add-verified"
 
     def check_unnecessary_verified
       return if block_url_offline?
@@ -552,8 +552,10 @@ module Cask
 
     def check_livecheck_version
       return unless appcast?
-      return :skip if cask.livecheck.skip?
-      return :latest if cask.version.latest?
+
+      # Respect cask skip conditions (e.g. discontinued, latest, unversioned)
+      skip_info = Homebrew::Livecheck::SkipConditions.skip_information(cask)
+      return :skip if skip_info.present?
 
       latest_version = Homebrew::Livecheck.latest_version(cask)&.fetch(:latest)
       if cask.version.to_s == latest_version.to_s
@@ -734,24 +736,31 @@ module Cask
       return unless download
 
       if cask.url && !cask.url.using
-        check_url_for_https_availability(cask.url, "binary URL",
+        check_url_for_https_availability(cask.url, "binary URL", cask.token, cask.tap,
                                          user_agents: [cask.url.user_agent])
       end
 
-      check_url_for_https_availability(cask.appcast, "appcast URL", check_content: true) if cask.appcast && appcast?
+      if cask.appcast && appcast?
+        check_url_for_https_availability(cask.appcast, "appcast URL", cask.token, cask.tap, check_content: true)
+      end
 
       return unless cask.homepage
 
-      check_url_for_https_availability(cask.homepage,
-                                       "homepage URL",
+      check_url_for_https_availability(cask.homepage, "homepage URL", cask.token, cask.tap,
                                        user_agents:   [:browser, :default],
                                        check_content: true,
                                        strict:        strict?)
     end
 
-    def check_url_for_https_availability(url_to_check, url_type, **options)
+    def check_url_for_https_availability(url_to_check, url_type, cask_token, tap, **options)
       problem = curl_check_http_content(url_to_check.to_s, url_type, **options)
-      add_error problem if problem
+      exception = tap&.audit_exception(:secure_connection_audit_skiplist, cask_token, url_to_check.to_s)
+
+      if problem
+        add_error problem unless exception
+      elsif exception
+        add_error "#{url_to_check} is in the secure connection audit skiplist but does not need to be skipped"
+      end
     end
   end
 end

@@ -92,8 +92,16 @@ class FormulaOrCaskUnavailableError < RuntimeError
   end
 
   sig { returns(String) }
+  def did_you_mean
+    similar_formula_names = Formula.fuzzy_search(name)
+    return "" if similar_formula_names.blank?
+
+    "Did you mean #{similar_formula_names.to_sentence two_words_connector: " or ", last_word_connector: " or "}?"
+  end
+
+  sig { returns(String) }
   def to_s
-    "No available formula or cask with the name \"#{name}\"."
+    "No available formula or cask with the name \"#{name}\". #{did_you_mean}".strip
   end
 end
 
@@ -129,7 +137,7 @@ class FormulaUnavailableError < FormulaOrCaskUnavailableError
 
   sig { returns(String) }
   def to_s
-    "No available formula with the name \"#{name}\"#{dependent_s}."
+    "No available formula with the name \"#{name}\"#{dependent_s}. #{did_you_mean}".strip
   end
 end
 
@@ -200,6 +208,7 @@ class FormulaUnreadableError < FormulaUnavailableError
   def initialize(name, error)
     super(name)
     @formula_error = error
+    set_backtrace(error.backtrace)
   end
 end
 
@@ -218,6 +227,13 @@ class TapFormulaUnavailableError < FormulaUnavailableError
     s = super
     s += "\nPlease tap it and then try again: brew tap #{tap}" unless tap.installed?
     s
+  end
+end
+
+# Raised when a formula in a the core tap is unavailable.
+class CoreTapFormulaUnavailableError < TapFormulaUnavailableError
+  def initialize(name)
+    super CoreTap.instance, name
   end
 end
 
@@ -242,6 +258,7 @@ class TapFormulaUnreadableError < TapFormulaUnavailableError
   def initialize(tap, name, error)
     super(tap, name)
     @formula_error = error
+    set_backtrace(error.backtrace)
   end
 end
 
@@ -307,9 +324,24 @@ class TapRemoteMismatchError < RuntimeError
     @expected_remote = expected_remote
     @actual_remote = actual_remote
 
-    super <<~EOS
+    super message
+  end
+
+  def message
+    <<~EOS
       Tap #{name} remote mismatch.
       #{expected_remote} != #{actual_remote}
+    EOS
+  end
+end
+
+# Raised when the remote of Homebrew/core does not match HOMEBREW_CORE_GIT_REMOTE.
+class TapCoreRemoteMismatchError < TapRemoteMismatchError
+  def message
+    <<~EOS
+      Tap #{name} remote does mot match HOMEBREW_CORE_GIT_REMOTE.
+      #{expected_remote} != #{actual_remote}
+      Please set HOMEBREW_CORE_GIT_REMOTE="#{actual_remote}" and run `brew update` instead.
     EOS
   end
 end
@@ -323,6 +355,19 @@ class TapAlreadyTappedError < RuntimeError
 
     super <<~EOS
       Tap #{name} already tapped.
+    EOS
+  end
+end
+
+# Raised when run `brew tap --custom-remote` without a remote URL.
+class TapNoCustomRemoteError < RuntimeError
+  attr_reader :name
+
+  def initialize(name)
+    @name = name
+
+    super <<~EOS
+      Tap #{name} with option `--custom-remote` but without a remote URL.
     EOS
   end
 end
@@ -546,7 +591,7 @@ class BuildFlagsError < RuntimeError
       The following #{flag_text}:
         #{flags.join(", ")}
       #{require_text} building tools, but none are installed.
-      #{DevelopmentTools.installation_instructions}#{bottle_text}
+      #{DevelopmentTools.installation_instructions} #{bottle_text}
     EOS
 
     super message
@@ -584,6 +629,13 @@ class CurlDownloadStrategyError < RuntimeError
     else
       super "Download failed: #{url}"
     end
+  end
+end
+
+# Raised in {HomebrewCurlDownloadStrategy#fetch}.
+class HomebrewCurlDownloadStrategyError < CurlDownloadStrategyError
+  def initialize(url)
+    super "Homebrew-installed `curl` is not installed for: #{url}"
   end
 end
 
@@ -734,5 +786,15 @@ end
 class ShebangDetectionError < RuntimeError
   def initialize(type, reason)
     super "Cannot detect #{type} shebang: #{reason}."
+  end
+end
+
+# Raised when one or more formulae have cyclic dependencies.
+class CyclicDependencyError < RuntimeError
+  def initialize(strongly_connected_components)
+    super <<~EOS
+      The following packages contain cyclic dependencies:
+        #{strongly_connected_components.select { |packages| packages.count > 1 }.map(&:to_sentence).join("\n  ")}
+    EOS
   end
 end
