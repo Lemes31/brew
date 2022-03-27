@@ -83,7 +83,7 @@ module Hardware
 
       sig { returns(Symbol) }
       def type
-        case RUBY_PLATFORM
+        case (ENV["HOMEBREW_PLATFORM"] || RUBY_PLATFORM)
         when /x86_64/, /i\d86/ then :intel
         when /arm/, /aarch64/ then :arm
         when /ppc|powerpc/ then :ppc
@@ -105,7 +105,7 @@ module Hardware
       end
 
       def bits
-        @bits ||= case RUBY_PLATFORM
+        @bits ||= case (ENV["HOMEBREW_PLATFORM"] || RUBY_PLATFORM)
         when /x86_64/, /ppc64|powerpc64/, /aarch64|arm64/ then 64
         when /i\d86/, /ppc/, /arm/ then 32
         end
@@ -113,7 +113,7 @@ module Hardware
 
       sig { returns(T::Boolean) }
       def sse4?
-        RUBY_PLATFORM.to_s.include?("x86_64")
+        (ENV["HOMEBREW_PLATFORM"] || RUBY_PLATFORM).to_s.include?("x86_64")
       end
 
       def is_32_bit?
