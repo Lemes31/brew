@@ -24,9 +24,6 @@ module Homebrew
              description: "List only formulae, or treat all named arguments as formulae."
       switch "--cask", "--casks",
              description: "List only casks, or treat all named arguments as casks."
-      switch "--unbrewed",
-             description: "List files in Homebrew's prefix not installed by Homebrew.",
-             replacement: "`brew --prefix --unbrewed`"
       switch "--full-name",
              description: "Print formulae with fully-qualified names. Unless `--full-name`, `--versions` "\
                           "or `--pinned` are passed, other options (i.e. `-1`, `-l`, `-r` and `-t`) are "\
@@ -59,11 +56,7 @@ module Homebrew
       conflicts "--pinned", "--multiple"
       conflicts "--pinned", "--cask"
       conflicts "--cask", "--multiple"
-      ["--formula", "--cask", "--full-name", "--versions", "--pinned"].each do |flag|
-        conflicts "--unbrewed", flag
-      end
       ["-1", "-l", "-r", "-t"].each do |flag|
-        conflicts "--unbrewed", flag
         conflicts "--versions", flag
         conflicts "--pinned", flag
       end
@@ -132,7 +125,7 @@ module Homebrew
       system_command! "find", args:         args.named.to_default_kegs.map(&:to_s) + %w[-not -type d -print],
                               print_stdout: true
     else
-      kegs, casks = args.named.to_formulae_to_casks(method: :default_kegs)
+      kegs, casks = args.named.to_kegs_to_casks
 
       kegs.each { |keg| PrettyListing.new keg } if kegs.present?
       list_casks(casks, args: args) if casks.present?

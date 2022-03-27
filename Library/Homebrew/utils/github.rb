@@ -5,11 +5,15 @@ require "uri"
 require "utils/github/actions"
 require "utils/github/api"
 
+require "system_command"
+
 # Wrapper functions for the GitHub API.
 #
 # @api private
 module GitHub
   extend T::Sig
+
+  include SystemCommand::Mixin
 
   module_function
 
@@ -57,7 +61,9 @@ module GitHub
     end
   end
 
-  def issues_for_formula(name, tap: CoreTap.instance, tap_remote_repo: tap.full_name, state: nil)
+  def issues_for_formula(name, tap: CoreTap.instance, tap_remote_repo: tap&.full_name, state: nil)
+    return [] unless tap_remote_repo
+
     search_issues(name, repo: tap_remote_repo, state: state, in: "title")
   end
 
@@ -72,6 +78,13 @@ module GitHub
   def write_access?(repo, user = nil)
     user ||= self.user["login"]
     ["admin", "write"].include?(permission(repo, user)["permission"])
+  end
+
+  def branch_exists?(user, repo, branch)
+    API.open_rest("#{API_URL}/repos/#{user}/#{repo}/branches/#{branch}")
+    true
+  rescue API::HTTPNotFoundError
+    false
   end
 
   def pull_requests(repo, **options)
@@ -345,7 +358,7 @@ module GitHub
     end
     raise API::Error, "The team #{org}/#{team} does not exist" if result["organization"]["team"].blank?
 
-    result["organization"]["team"]["members"]["nodes"].map { |member| [member["login"], member["name"]] }.to_h
+    result["organization"]["team"]["members"]["nodes"].to_h { |member| [member["login"], member["name"]] }
   end
 
   def sponsors_by_tier(user)
@@ -530,7 +543,8 @@ module GitHub
                     "--", *changed_files
         return if args.commit?
 
-        safe_system "git", "push", "--set-upstream", remote_url, "#{branch}:#{branch}"
+        system_command!("git", args:         ["push", "--set-upstream", remote_url, "#{branch}:#{branch}"],
+                               print_stdout: true)
         safe_system "git", "checkout", "--quiet", previous_branch
         pr_message = <<~EOS
           #{pr_message}

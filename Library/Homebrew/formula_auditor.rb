@@ -68,31 +68,42 @@ module Homebrew
           unversioned_name = unversioned_formula.basename(".rb")
           problem "#{formula} is versioned but no #{unversioned_name} formula exists"
         end
-      elsif @build_stable &&
-            formula.stable? &&
+      elsif formula.stable? &&
             !@versioned_formula &&
             (versioned_formulae = formula.versioned_formulae - [formula]) &&
             versioned_formulae.present?
-        versioned_aliases = formula.aliases.grep(/.@\d/)
+        versioned_aliases, unversioned_aliases = formula.aliases.partition { |a| a =~ /.@\d/ }
         _, last_alias_version = versioned_formulae.map(&:name).last.split("@")
+
         alias_name_major = "#{formula.name}@#{formula.version.major}"
-        alias_name_major_minor = "#{alias_name_major}.#{formula.version.minor}"
+        alias_name_major_minor = "#{formula.name}@#{formula.version.major_minor}"
         alias_name = if last_alias_version.split(".").length == 1
           alias_name_major
         else
           alias_name_major_minor
         end
-        valid_alias_names = [alias_name_major, alias_name_major_minor]
+        valid_main_alias_names = [alias_name_major, alias_name_major_minor].uniq
 
-        unless @core_tap
-          versioned_aliases.map! { |a| "#{formula.tap}/#{a}" }
-          valid_alias_names.map! { |a| "#{formula.tap}/#{a}" }
+        # Also accept versioned aliases with names of other aliases, but do not require them.
+        valid_other_alias_names = unversioned_aliases.flat_map do |name|
+          %W[
+            #{name}@#{formula.version.major}
+            #{name}@#{formula.version.major_minor}
+          ].uniq
         end
 
-        valid_versioned_aliases = versioned_aliases & valid_alias_names
-        invalid_versioned_aliases = versioned_aliases - valid_alias_names
+        unless @core_tap
+          [versioned_aliases, valid_main_alias_names, valid_other_alias_names].each do |array|
+            array.map! { |a| "#{formula.tap}/#{a}" }
+          end
+        end
 
-        if valid_versioned_aliases.empty?
+        valid_versioned_aliases = versioned_aliases & valid_main_alias_names
+        invalid_versioned_aliases = versioned_aliases - valid_main_alias_names - valid_other_alias_names
+
+        latest_versioned_formula = versioned_formulae.map(&:name).first
+
+        if valid_versioned_aliases.empty? && alias_name != latest_versioned_formula
           if formula.tap
             problem <<~EOS
               Formula has other versions so create a versioned alias:
@@ -116,6 +127,33 @@ module Homebrew
     def self.aliases
       # core aliases + tap alias names + tap alias full name
       @aliases ||= Formula.aliases + Formula.tap_aliases
+    end
+
+    SYNCED_VERSIONS_FORMULAE_FILE = "synced_versions_formulae.json"
+
+    def audit_synced_versions_formulae
+      return unless formula.tap
+
+      synced_versions_formulae_file = formula.tap.path/SYNCED_VERSIONS_FORMULAE_FILE
+      return unless synced_versions_formulae_file.file?
+
+      name = formula.name
+      version = formula.version
+
+      synced_versions_formulae = JSON.parse(synced_versions_formulae_file.read)
+      synced_versions_formulae.each do |synced_version_formulae|
+        next unless synced_version_formulae.include? name
+
+        synced_version_formulae.each do |synced_formula|
+          next if synced_formula == name
+
+          if (synced_version = Formulary.factory(synced_formula).version) != version
+            problem "Version of `#{synced_formula}` (#{synced_version}) should match version of `#{name}` (#{version})"
+          end
+        end
+
+        break
+      end
     end
 
     def audit_formula_name
@@ -261,6 +299,13 @@ module Homebrew
           problem "Dependency '#{dep.name}' is marked as :run. Remove :run; it is a no-op." if dep.tags.include?(:run)
 
           next unless @core_tap
+
+          unless dep_f.tap.core_tap?
+            problem <<~EOS
+              Dependency '#{dep.name}' is not in homebrew/core. Formulae in homebrew/core
+              should not have dependencies in external taps.
+            EOS
+          end
 
           # we want to allow uses_from_macos for aliases but not bare dependencies
           if self.class.aliases.include?(dep.name) && spec.uses_from_macos_names.exclude?(dep.name)
@@ -553,7 +598,8 @@ module Homebrew
 
           ra = ResourceAuditor.new(
             resource, spec_name,
-            online: @online, strict: @strict, only: @only, except: @except
+            online: @online, strict: @strict, only: @only, except: @except,
+            use_homebrew_curl: resource.using == :homebrew_curl
           ).audit
           ra.problems.each do |message|
             problem "#{name} resource #{resource.name.inspect}: #{message}"
@@ -646,6 +692,8 @@ module Homebrew
     end
 
     def audit_revision_and_version_scheme
+      new_formula_problem("New formulae should not define a revision.") if @new_formula && !formula.revision.zero?
+
       return unless @git
       return unless formula.tap # skip formula not from core or any taps
       return unless formula.tap.git? # git log is required

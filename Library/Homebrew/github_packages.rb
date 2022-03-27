@@ -3,6 +3,7 @@
 
 require "utils/curl"
 require "json"
+require "zlib"
 
 # GitHub Packages client.
 #
@@ -21,6 +22,9 @@ class GitHubPackages
 
   URL_REGEX = %r{(?:#{Regexp.escape(URL_PREFIX)}|#{Regexp.escape(DOCKER_PREFIX)})([\w-]+)/([\w-]+)}.freeze
 
+  GZIP_BUFFER_SIZE = 64 * 1024
+  private_constant :GZIP_BUFFER_SIZE
+
   # Translate Homebrew tab.arch to OCI platform.architecture
   TAB_ARCH_TO_PLATFORM_ARCHITECTURE = {
     "arm64"  => "arm64",
@@ -32,20 +36,6 @@ class GitHubPackages
     "Linux"     => "linux",
     "Macintosh" => "darwin",
   }.freeze
-
-  sig { returns(String) }
-  def inspect
-    "#<GitHubPackages: org=#{@github_org}>"
-  end
-
-  sig { params(org: T.nilable(String)).void }
-  def initialize(org: "homebrew")
-    @github_org = org
-
-    raise UsageError, "Must set a GitHub organisation!" unless @github_org
-
-    ENV["HOMEBREW_FORCE_HOMEBREW_ON_LINUX"] = "1" if @github_org == "homebrew" && !OS.mac?
-  end
 
   sig {
     params(
@@ -62,16 +52,7 @@ class GitHubPackages
     raise UsageError, "HOMEBREW_GITHUB_PACKAGES_USER is unset." if user.blank?
     raise UsageError, "HOMEBREW_GITHUB_PACKAGES_TOKEN is unset." if token.blank?
 
-    skopeo = [
-      which("skopeo"),
-      which("skopeo", ENV["HOMEBREW_PATH"]),
-      HOMEBREW_PREFIX/"bin/skopeo",
-    ].compact.first
-    unless skopeo.exist?
-      ohai "Installing `skopeo` for upload..."
-      safe_system HOMEBREW_BREW_FILE, "install", "--formula", "skopeo"
-      skopeo = Formula["skopeo"].opt_bin/"skopeo"
-    end
+    skopeo = ensure_executable!("skopeo", reason: "upload")
 
     require "json_schemer"
 
@@ -361,11 +342,14 @@ class GitHubPackages
         "os.version" => os_version,
       }.reject { |_, v| v.blank? }
 
-      tar_sha256 = Digest::SHA256.hexdigest(
-        Utils.safe_popen_read("gunzip", "--stdout", "--decompress", local_file),
-      )
+      tar_sha256 = Digest::SHA256.new
+      Zlib::GzipReader.open(local_file) do |gz|
+        while (data = gz.read(GZIP_BUFFER_SIZE))
+          tar_sha256 << data
+        end
+      end
 
-      config_json_sha256, config_json_size = write_image_config(platform_hash, tar_sha256, blobs)
+      config_json_sha256, config_json_size = write_image_config(platform_hash, tar_sha256.hexdigest, blobs)
 
       formulae_dir = tag_hash["formulae_brew_sh_path"]
       documentation = "https://formulae.brew.sh/#{formulae_dir}/#{formula_name}" if formula_core_tap

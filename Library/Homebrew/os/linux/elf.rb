@@ -86,10 +86,18 @@ module ELFShim
     elf_type == :executable
   end
 
+  # The runtime search path, such as:
+  # "/lib:/usr/lib:/usr/local/lib"
   def rpath
     return @rpath if defined? @rpath
 
     @rpath = rpath_using_patchelf_rb
+  end
+
+  # An array of runtime search path entries, such as:
+  # ["/lib", "/usr/lib", "/usr/local/lib"]
+  def rpaths
+    rpath.split(":")
   end
 
   def interpreter
@@ -133,8 +141,6 @@ module ELFShim
         match.captures.compact.first
       end.compact
       @dylibs = ldd_paths.select do |ldd_path|
-        next true unless ldd_path.start_with? "/"
-
         needed.include? File.basename(ldd_path)
       end
     end

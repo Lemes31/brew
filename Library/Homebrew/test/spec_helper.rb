@@ -169,13 +169,11 @@ RSpec.configure do |config|
                       .append(svnadmin.dirname)
   end
 
-  config.before(:each, :needs_tls13) do
-    begin
-      curl = Utils::Curl.curl_executable(use_homebrew_curl: OS.mac?)
-    rescue FormulaUnavailableError
-      skip "curl formula not available"
-    end
-    skip "Requires curl with TLS 1.3 support." unless quiet_system curl, "--tlsv1.3", "--head", "https://brew.sh/"
+  config.before(:each, :needs_homebrew_curl) do
+    ENV["HOMEBREW_CURL"] = ENV["HOMEBREW_BREWED_CURL_PATH"]
+    skip "A `curl` with TLS 1.3 support is required." unless curl_supports_tls13?
+  rescue FormulaUnavailableError
+    skip "No `curl` formula is available."
   end
 
   config.before(:each, :needs_unzip) do
@@ -204,6 +202,7 @@ RSpec.configure do |config|
     Requirement.clear_cache
     FormulaInstaller.clear_attempted
     FormulaInstaller.clear_installed
+    FormulaInstaller.clear_fetched
 
     TEST_DIRECTORIES.each(&:mkpath)
 
@@ -215,12 +214,14 @@ RSpec.configure do |config|
 
     @__stdout = $stdout.clone
     @__stderr = $stderr.clone
+    @__stdin = $stdin.clone
 
     begin
       if (example.metadata.keys & [:focus, :byebug]).empty? && !ENV.key?("HOMEBREW_VERBOSE_TESTS")
         $stdout.reopen(File::NULL)
         $stderr.reopen(File::NULL)
       end
+      $stdin.reopen(File::NULL)
 
       begin
         timeout = example.metadata.fetch(:timeout, 60)
@@ -237,8 +238,10 @@ RSpec.configure do |config|
 
       $stdout.reopen(@__stdout)
       $stderr.reopen(@__stderr)
+      $stdin.reopen(@__stdin)
       @__stdout.close
       @__stderr.close
+      @__stdin.close
 
       Formulary.clear_cache
       Tap.clear_cache

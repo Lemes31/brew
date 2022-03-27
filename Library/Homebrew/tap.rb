@@ -304,6 +304,8 @@ class Tap
 
     begin
       safe_system "git", *args
+      # TODO: 3.6.0: consider if we want to actually read all contents of tap or odeprecate.
+
       if !Readall.valid_tap?(self, aliases: true) && !Homebrew::EnvConfig.developer?
         raise "Cannot tap #{name}: invalid syntax in tap!"
       end
@@ -659,7 +661,7 @@ class Tap
 
     TAP_DIRECTORY.subdirs.each do |user|
       user.subdirs.each do |repo|
-        block.call fetch(user.basename.to_s, repo.basename.to_s)
+        yield fetch(user.basename.to_s, repo.basename.to_s)
       end
     end
   end
@@ -772,7 +774,7 @@ class CoreTap < Tap
 
   def self.ensure_installed!
     return if instance.installed?
-    return if ENV["HOMEBREW_INSTALL_FROM_API"].present?
+    return if Homebrew::EnvConfig.install_from_api?
 
     safe_system HOMEBREW_BREW_FILE, "tap", instance.name
   end
@@ -795,7 +797,7 @@ class CoreTap < Tap
   # @private
   sig { params(manual: T::Boolean).void }
   def uninstall(manual: false)
-    raise "Tap#uninstall is not available for CoreTap" if ENV["HOMEBREW_INSTALL_FROM_API"].blank?
+    raise "Tap#uninstall is not available for CoreTap" unless Homebrew::EnvConfig.install_from_api?
 
     super
   end
@@ -827,7 +829,7 @@ class CoreTap < Tap
   # @private
   sig { returns(T::Boolean) }
   def linuxbrew_core?
-    remote_repo.to_s.end_with?("/linuxbrew-core")
+    remote_repo.to_s.end_with?("/linuxbrew-core") || remote_repo == "Linuxbrew/homebrew-core"
   end
 
   # @private
