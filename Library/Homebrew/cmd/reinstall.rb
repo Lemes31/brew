@@ -57,6 +57,10 @@ module Homebrew
         [:switch, "--keep-tmp", {
           description: "Retain the temporary files created during installation.",
         }],
+        [:switch, "--debug-symbols", {
+          depends_on:  "--build-from-source",
+          description: "Generate debug symbols on build. Source will be retained in a cache directory. ",
+        }],
         [:switch, "--display-times", {
           env:         :display_install_times,
           description: "Print install times for each formula at the end of the run.",
@@ -88,20 +92,8 @@ module Homebrew
   def reinstall
     args = reinstall_args.parse
 
-    # We need to use the bottle API instead of just using the formula file
-    # from an installed keg because it will not contain bottle information.
-    # As a consequence, `brew reinstall` will also upgrade outdated formulae
-    if Homebrew::EnvConfig.install_from_api?
-      args.named.each do |name|
-        formula = Formulary.factory(name)
-        next unless formula.any_version_installed?
-        next if formula.tap.present? && !formula.core_formula?
-        next unless Homebrew::API::Bottle.available?(name)
-
-        Homebrew::API::Bottle.fetch_bottles(name)
-      rescue FormulaUnavailableError
-        next
-      end
+    if args.build_from_source? && Homebrew::EnvConfig.install_from_api?
+      raise UsageError, "--build-from-source is not supported when using HOMEBREW_INSTALL_FROM_API."
     end
 
     formulae, casks = args.named.to_formulae_and_casks(method: :resolve)
@@ -127,6 +119,7 @@ module Homebrew
         build_from_source_formulae: args.build_from_source_formulae,
         interactive:                args.interactive?,
         keep_tmp:                   args.keep_tmp?,
+        debug_symbols:              args.debug_symbols?,
         force:                      args.force?,
         debug:                      args.debug?,
         quiet:                      args.quiet?,
@@ -144,6 +137,7 @@ module Homebrew
       build_from_source_formulae: args.build_from_source_formulae,
       interactive:                args.interactive?,
       keep_tmp:                   args.keep_tmp?,
+      debug_symbols:              args.debug_symbols?,
       force:                      args.force?,
       debug:                      args.debug?,
       quiet:                      args.quiet?,
@@ -159,8 +153,11 @@ module Homebrew
         require_sha:    args.require_sha?,
         skip_cask_deps: args.skip_cask_deps?,
         quarantine:     args.quarantine?,
+        zap:            args.zap?,
       )
     end
+
+    Cleanup.periodic_clean!
 
     Homebrew.messages.display_messages(display_times: args.display_times?)
   end

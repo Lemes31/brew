@@ -184,8 +184,7 @@ module GitHub
       # This is a no-op if the user is opting out of using the GitHub API.
       return block_given? ? yield({}) : {} if Homebrew::EnvConfig.no_github_api?
 
-      args = ["--header", "Accept: application/vnd.github.v3+json", "--write-out", "\n%\{http_code}"]
-      args += ["--header", "Accept: application/vnd.github.antiope-preview+json"]
+      args = ["--header", "Accept: application/vnd.github+json", "--write-out", "\n%\{http_code}"]
 
       token = credentials
       args += ["--header", "Authorization: token #{token}"] unless credentials_type == :none
@@ -253,17 +252,19 @@ module GitHub
       end
     end
 
-    def open_graphql(query, scopes: [].freeze)
-      data = { query: query }
+    def open_graphql(query, variables: nil, scopes: [].freeze, raise_errors: true)
+      data = { query: query, variables: variables }
       result = open_rest("#{API_URL}/graphql", scopes: scopes, data: data, request_method: "POST")
 
-      if result["errors"].present?
-        raise Error, result["errors"].map { |e|
-                       "#{e["type"]}: #{e["message"]}"
-                     }.join("\n")
-      end
+      if raise_errors
+        if result["errors"].present?
+          raise Error, result["errors"].map { |e| "#{e["type"]}: #{e["message"]}" }.join("\n")
+        end
 
-      result["data"]
+        result["data"]
+      else
+        result
+      end
     end
 
     def raise_error(output, errors, http_code, headers, scopes)

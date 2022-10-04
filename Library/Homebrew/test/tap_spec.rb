@@ -96,10 +96,10 @@ describe Tap do
   end
 
   specify "::fetch" do
-    expect(described_class.fetch("Homebrew", "core")).to be_kind_of(CoreTap)
-    expect(described_class.fetch("Homebrew", "homebrew")).to be_kind_of(CoreTap)
+    expect(described_class.fetch("Homebrew", "core")).to be_a(CoreTap)
+    expect(described_class.fetch("Homebrew", "homebrew")).to be_a(CoreTap)
     tap = described_class.fetch("Homebrew", "foo")
-    expect(tap).to be_kind_of(described_class)
+    expect(tap).to be_a(described_class)
     expect(tap.name).to eq("homebrew/foo")
 
     expect {
@@ -173,7 +173,7 @@ describe Tap do
     expect(homebrew_foo_tap.formula_renames).to eq("oldname" => "foo")
     expect(homebrew_foo_tap.tap_migrations).to eq("removed-formula" => "homebrew/foo")
     expect(homebrew_foo_tap.command_files).to eq([cmd_file])
-    expect(homebrew_foo_tap.to_hash).to be_kind_of(Hash)
+    expect(homebrew_foo_tap.to_hash).to be_a(Hash)
     expect(homebrew_foo_tap).to have_formula_file(formula_file)
     expect(homebrew_foo_tap).to have_formula_file("Formula/foo.rb")
     expect(homebrew_foo_tap).not_to have_formula_file("bar.rb")
@@ -337,7 +337,7 @@ describe Tap do
       it "disables forced auto-updates when false" do
         expect(already_tapped_tap).to be_installed
         already_tapped_tap.install force_auto_update: false
-        expect(already_tapped_tap.config["forceautoupdate"]).to eq("false")
+        expect(already_tapped_tap.config["forceautoupdate"]).to be_nil
       end
     end
 
@@ -453,7 +453,7 @@ describe Tap do
     expect(homebrew_foo_tap.config["foo"]).to be_nil
     homebrew_foo_tap.config["foo"] = "bar"
     expect(homebrew_foo_tap.config["foo"]).to eq("bar")
-    homebrew_foo_tap.config["foo"] = nil
+    homebrew_foo_tap.config.delete("foo")
     expect(homebrew_foo_tap.config["foo"]).to be_nil
   end
 

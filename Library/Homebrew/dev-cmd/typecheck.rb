@@ -20,10 +20,13 @@ module Homebrew
              description: "Silence all non-critical errors."
       switch "--update",
              description: "Update RBI files."
+      switch "--update-all",
+             description: "Update all RBI files rather than just updated gems."
       switch "--suggest-typed",
              depends_on:  "--update",
              description: "Try upgrading `typed` sigils."
       switch "--fail-if-not-changed",
+             hidden:      true,
              description: "Return a failing status code if all gems are up to date " \
                           "and gem definitions do not need a tapioca update."
       flag   "--dir=",
@@ -47,17 +50,25 @@ module Homebrew
     Homebrew.install_bundler_gems!(groups: ["sorbet"])
 
     HOMEBREW_LIBRARY_PATH.cd do
-      if args.update?
+      if args.update? || args.update_all?
+        odeprecated "brew typecheck --update --fail-if-not-changed" if args.fail_if_not_changed?
+
         excluded_gems = [
           "did_you_mean", # RBI file is already provided by Sorbet
           "webrobots", # RBI file is bugged
+          "sorbet-static-and-runtime", # Unnecessary RBI - remove this entry with Tapioca 0.8
         ]
+        typed_overrides = [
+          "msgpack:false", # Investigate removing this with Tapioca 0.8
+        ]
+        tapioca_args = ["--exclude", *excluded_gems, "--typed-overrides", *typed_overrides]
+        tapioca_args << "--all" if args.update_all?
 
         ohai "Updating Tapioca RBI files..."
-        system "bundle", "exec", "tapioca", "gem", "--exclude", *excluded_gems
-        system "bundle", "exec", "parlour"
-        system "bundle", "exec", "srb", "rbi", "hidden-definitions"
-        system "bundle", "exec", "srb", "rbi", "todo"
+        safe_system "bundle", "exec", "tapioca", "gem", *tapioca_args
+        safe_system "bundle", "exec", "parlour"
+        safe_system "bundle", "exec", "srb", "rbi", "hidden-definitions"
+        safe_system "bundle", "exec", "srb", "rbi", "todo"
 
         if args.suggest_typed?
           result = system_command(
@@ -90,8 +101,6 @@ module Homebrew
             path.atomic_write contents.sub(/\A(\s*#\s*typed:\s*)(?:[^\s]+)/, "\\1#{new_level}")
           end
         end
-
-        Homebrew.failed = system("git", "diff", "--stat", "--exit-code") if args.fail_if_not_changed?
 
         return
       end

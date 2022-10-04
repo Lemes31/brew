@@ -49,7 +49,7 @@ module Homebrew
                     .partition { |f| f.realpath == HOMEBREW_BREW_FILE.realpath || f.extname == ".sh" }
 
       rubocop_result = if shell_files.any? && ruby_files.none?
-        output_type == :json ? [] : true
+        (output_type == :json) ? [] : true
       else
         run_rubocop(ruby_files, output_type,
                     fix: fix,
@@ -60,7 +60,7 @@ module Homebrew
       end
 
       shellcheck_result = if ruby_files.any? && shell_files.none?
-        output_type == :json ? [] : true
+        (output_type == :json) ? [] : true
       else
         run_shellcheck(shell_files, output_type, fix: fix)
       end
@@ -97,7 +97,7 @@ module Homebrew
         --force-exclusion
       ]
       args << if fix
-        "--auto-correct-all"
+        "--autocorrect-all"
       else
         "--parallel"
       end
@@ -240,16 +240,8 @@ module Homebrew
       files.delete(HOMEBREW_REPOSITORY/"completions/bash/brew")
       files.delete(HOMEBREW_REPOSITORY/"Dockerfile")
 
-      # shfmt options:
-      #   -i 2     : indent by 2 spaces
-      #   -ci      : indent switch cases
-      #   -ln bash : language variant to parse ("bash")
-      #   -w       : write result to file instead of stdout (inplace fixing)
-      # "--" is needed for `utils/shfmt.sh`
-      args = ["-i", "2", "-ci", "-ln", "bash", "--", *files]
-
-      # Do inplace fixing
-      args.unshift("-w") if fix # need to add before "--"
+      args = ["--language-dialect", "bash", "--indent", "2", "--case-indent", "--", *files]
+      args.unshift("--write") if fix # need to add before "--"
 
       system shfmt, *args
       $CHILD_STATUS.success?

@@ -7,39 +7,19 @@ if ENV["HOMEBREW_STACKPROF"]
 end
 
 raise "HOMEBREW_BREW_FILE was not exported! Please call bin/brew directly!" unless ENV["HOMEBREW_BREW_FILE"]
+raise "#{__FILE__} must not be loaded via `require`." if $PROGRAM_NAME != __FILE__
 
 std_trap = trap("INT") { exit! 130 } # no backtrace thanks
 
 # check ruby version before requiring any modules.
-unless ENV["HOMEBREW_REQUIRED_RUBY_VERSION"]
-  raise "HOMEBREW_REQUIRED_RUBY_VERSION was not exported! Please call bin/brew directly!"
-end
-
-REQUIRED_RUBY_X, REQUIRED_RUBY_Y, = ENV["HOMEBREW_REQUIRED_RUBY_VERSION"].split(".").map(&:to_i)
+REQUIRED_RUBY_X, REQUIRED_RUBY_Y, = ENV.fetch("HOMEBREW_REQUIRED_RUBY_VERSION").split(".").map(&:to_i)
 RUBY_X, RUBY_Y, = RUBY_VERSION.split(".").map(&:to_i)
 if RUBY_X < REQUIRED_RUBY_X || (RUBY_X == REQUIRED_RUBY_X && RUBY_Y < REQUIRED_RUBY_Y)
   raise "Homebrew must be run under Ruby #{REQUIRED_RUBY_X}.#{REQUIRED_RUBY_Y}! " \
         "You're running #{RUBY_VERSION}."
 end
 
-# Also define here so we can rescue regardless of location.
-class MissingEnvironmentVariables < RuntimeError; end
-
-begin
-  require_relative "global"
-rescue MissingEnvironmentVariables => e
-  raise e if ENV["HOMEBREW_MISSING_ENV_RETRY"]
-
-  if ENV["HOMEBREW_DEVELOPER"]
-    $stderr.puts <<~EOS
-      Warning: #{e.message}
-      Retrying with `exec #{ENV["HOMEBREW_BREW_FILE"]}`!
-    EOS
-  end
-
-  ENV["HOMEBREW_MISSING_ENV_RETRY"] = "1"
-  exec ENV["HOMEBREW_BREW_FILE"], *ARGV
-end
+require_relative "global"
 
 begin
   trap("INT", std_trap) # restore default CTRL-C handler
@@ -74,8 +54,8 @@ begin
   args = Homebrew::CLI::Parser.new.parse(ARGV.dup.freeze, ignore_invalid_options: true)
   Context.current = args.context
 
-  path = PATH.new(ENV["PATH"])
-  homebrew_path = PATH.new(ENV["HOMEBREW_PATH"])
+  path = PATH.new(ENV.fetch("PATH"))
+  homebrew_path = PATH.new(ENV.fetch("HOMEBREW_PATH"))
 
   # Add shared wrappers.
   path.prepend(HOMEBREW_SHIMS_PATH/"shared")
@@ -107,6 +87,11 @@ begin
   end
 
   if internal_cmd || Commands.external_ruby_v2_cmd_path(cmd)
+    if Commands::INSTALL_FROM_API_FORBIDDEN_COMMANDS.include?(cmd) &&
+       Homebrew::EnvConfig.install_from_api? && !Homebrew::EnvConfig.developer?
+      odie "This command cannot be run while HOMEBREW_INSTALL_FROM_API is set!"
+    end
+
     Homebrew.send Commands.method_name(cmd)
   elsif (path = Commands.external_ruby_cmd_path(cmd))
     require?(path)
@@ -120,7 +105,15 @@ begin
     possible_tap = OFFICIAL_CMD_TAPS.find { |_, cmds| cmds.include?(cmd) }
     possible_tap = Tap.fetch(possible_tap.first) if possible_tap
 
-    if !possible_tap || possible_tap.installed? || Tap.untapped_official_taps.include?(possible_tap.name)
+    if !possible_tap ||
+       possible_tap.installed? ||
+       (blocked_tap = Tap.untapped_official_taps.include?(possible_tap.name))
+      if blocked_tap
+        onoe <<~EOS
+          `brew #{cmd}` is unavailable because #{possible_tap.name} was manually untapped.
+          Run `brew tap #{possible_tap.name}` to reenable `brew #{cmd}`.
+        EOS
+      end
       # Check for cask explicitly because it's very common in old guides
       odie "`brew cask` is no longer a `brew` command. Use `brew <command> --cask` instead." if cmd == "cask"
       odie "Unknown command: #{cmd}"
@@ -129,8 +122,9 @@ begin
     # Unset HOMEBREW_HELP to avoid confusing the tap
     with_env HOMEBREW_HELP: nil do
       tap_commands = []
-      cgroup = Utils.popen_read("cat", "/proc/1/cgroup")
-      if %w[azpl_job actions_job docker garden kubepods].none? { |container| cgroup.include?(container) }
+      if File.exist?("/.dockerenv") ||
+         ((cgroup = Utils.popen_read("cat", "/proc/1/cgroup").presence) &&
+          %w[azpl_job actions_job docker garden kubepods].none? { |type| cgroup.include?(type) })
         brew_uid = HOMEBREW_BREW_FILE.stat.uid
         tap_commands += %W[/usr/bin/sudo -u ##{brew_uid}] if Process.uid.zero? && !brew_uid.zero?
       end

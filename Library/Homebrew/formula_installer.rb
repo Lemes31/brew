@@ -39,6 +39,7 @@ class FormulaInstaller
   attr_predicate :installed_as_dependency?, :installed_on_request?
   attr_predicate :show_summary_heading?, :show_header?
   attr_predicate :force_bottle?, :ignore_deps?, :only_deps?, :interactive?, :git?, :force?, :overwrite?, :keep_tmp?
+  attr_predicate :debug_symbols?
   attr_predicate :verbose?, :debug?, :quiet?
 
   def initialize(
@@ -58,6 +59,7 @@ class FormulaInstaller
     git: false,
     interactive: false,
     keep_tmp: false,
+    debug_symbols: false,
     cc: nil,
     options: Options.new,
     force: false,
@@ -71,6 +73,7 @@ class FormulaInstaller
     @force = force
     @overwrite = overwrite
     @keep_tmp = keep_tmp
+    @debug_symbols = debug_symbols
     @link_keg = !formula.keg_only? || link_keg
     @show_header = show_header
     @ignore_deps = ignore_deps
@@ -134,9 +137,7 @@ class FormulaInstaller
 
   sig { returns(T::Boolean) }
   def build_bottle?
-    return false unless @build_bottle
-
-    !formula.bottle_disabled?
+    @build_bottle.present?
   end
 
   sig { params(output_warning: T::Boolean).returns(T::Boolean) }
@@ -146,7 +147,6 @@ class FormulaInstaller
     return false if build_from_source? || build_bottle? || interactive?
     return false if @cc
     return false unless options.empty?
-    return false if formula.bottle_disabled?
 
     unless formula.pour_bottle?
       if output_warning && formula.pour_bottle_check_unsatisfied_reason
@@ -221,11 +221,6 @@ class FormulaInstaller
   def verify_deps_exist
     begin
       compute_dependencies
-    rescue CoreTapFormulaUnavailableError => e
-      raise unless Homebrew::API::Bottle.available? e.name
-
-      Homebrew::API::Bottle.fetch_bottles(e.name)
-      retry
     rescue TapFormulaUnavailableError => e
       raise if e.tap.installed?
 
@@ -249,8 +244,7 @@ class FormulaInstaller
     end
 
     if Homebrew.default_prefix? &&
-       !build_from_source? && !build_bottle? && !formula.head? &&
-       formula.tap&.core_tap? && !formula.bottle_unneeded? &&
+       !build_from_source? && !build_bottle? && !formula.head? && formula.tap&.core_tap? &&
        # Integration tests override homebrew-core locations
        ENV["HOMEBREW_TEST_TMPDIR"].nil? &&
        !pour_bottle?
@@ -373,9 +367,7 @@ class FormulaInstaller
     lock
 
     start_time = Time.now
-    if !formula.bottle_unneeded? && !pour_bottle? && DevelopmentTools.installed?
-      Homebrew::Install.perform_build_from_source_checks
-    end
+    Homebrew::Install.perform_build_from_source_checks if !pour_bottle? && DevelopmentTools.installed?
 
     # Warn if a more recent version of this formula is available in the tap.
     begin
@@ -388,7 +380,7 @@ class FormulaInstaller
 
     check_conflicts
 
-    raise UnbottledError, [formula] if !pour_bottle? && !formula.bottle_unneeded? && !DevelopmentTools.installed?
+    raise UnbottledError, [formula] if !pour_bottle? && !DevelopmentTools.installed?
 
     unless ignore_deps?
       deps = compute_dependencies(use_cache: false)
@@ -460,7 +452,7 @@ class FormulaInstaller
       end
       s = formula_contents.gsub(/  bottle do.+?end\n\n?/m, "")
       brew_prefix = formula.prefix/".brew"
-      brew_prefix.mkdir
+      brew_prefix.mkpath
       Pathname(brew_prefix/"#{formula.name}.rb").atomic_write(s)
 
       keg = Keg.new(formula.prefix)
@@ -520,7 +512,7 @@ class FormulaInstaller
     deps.map(&:first).map(&:to_formula).reject do |dep_f|
       next false unless dep_f.pour_bottle?
 
-      dep_f.bottle_unneeded? || dep_f.bottled?
+      dep_f.bottled?
     end
   end
 
@@ -588,13 +580,10 @@ class FormulaInstaller
     unsatisfied_reqs
   end
 
-  def expand_dependencies
-    inherited_options = Hash.new { |hash, key| hash[key] = Options.new }
-    pour_bottle = pour_bottle?
-
+  def expand_dependencies_for_formula(formula, inherited_options)
     # Cache for this expansion only. FormulaInstaller has a lot of inputs which can alter expansion.
     cache_key = "FormulaInstaller-#{formula.full_name}-#{Time.now.to_f}"
-    expanded_deps = Dependency.expand(formula, cache_key: cache_key) do |dependent, dep|
+    Dependency.expand(formula, cache_key: cache_key) do |dependent, dep|
       inherited_options[dep.name] |= inherited_options_for(dep)
       build = effective_build_options_for(
         dependent,
@@ -610,28 +599,14 @@ class FormulaInstaller
         Dependency.prune
       elsif dep.satisfied?(inherited_options[dep.name])
         Dependency.skip
-      else
-        pour_bottle ||= install_bottle_for?(dep.to_formula, build)
       end
     end
+  end
 
-    # We require some dependencies (glibc, GCC 5, etc.) if binaries were built.
-    # Native binaries shouldn't exist in cross-platform `all` bottles.
-    if pour_bottle && !formula.bottled?(:all) && !Keg.bottle_dependencies.empty?
-      bottle_deps = if Keg.bottle_dependencies.exclude?(formula.name)
-        Keg.bottle_dependencies
-      elsif Keg.relocation_formulae.exclude?(formula.name)
-        Keg.relocation_formulae
-      else
-        []
-      end
-      bottle_deps = bottle_deps.map { |formula| Dependency.new(formula) }
-                               .reject do |dep|
-        inherited_options[dep.name] |= inherited_options_for(dep)
-        dep.satisfied? inherited_options[dep.name]
-      end
-      expanded_deps = Dependency.merge_repeats(bottle_deps + expanded_deps)
-    end
+  def expand_dependencies
+    inherited_options = Hash.new { |hash, key| hash[key] = Options.new }
+
+    expanded_deps = expand_dependencies_for_formula(formula, inherited_options)
 
     expanded_deps.map { |dep| [dep, inherited_options[dep.name]] }
   end
@@ -692,6 +667,7 @@ class FormulaInstaller
       include_test_formulae:      @include_test_formulae,
       build_from_source_formulae: @build_from_source_formulae,
       keep_tmp:                   keep_tmp?,
+      debug_symbols:              debug_symbols?,
       force:                      force?,
       debug:                      debug?,
       quiet:                      quiet?,
@@ -745,6 +721,7 @@ class FormulaInstaller
         include_test_formulae:      @include_test_formulae,
         build_from_source_formulae: @build_from_source_formulae,
         keep_tmp:                   keep_tmp?,
+        debug_symbols:              debug_symbols?,
         force:                      force?,
         debug:                      debug?,
         quiet:                      quiet?,
@@ -798,6 +775,8 @@ class FormulaInstaller
 
     fix_dynamic_linkage(keg) if !@poured_bottle || !formula.bottle_specification.skip_relocation?
 
+    Homebrew::Install.global_post_install
+
     if build_bottle?
       ohai "Not running 'post_install' as we're building a bottle"
       puts "You can run it manually using:"
@@ -805,6 +784,8 @@ class FormulaInstaller
     else
       post_install
     end
+
+    keg.prepare_debug_symbols if debug_symbols?
 
     # Updates the cache for a particular formula after doing an install
     CacheStoreDatabase.use(:linkage) do |db|
@@ -834,6 +815,7 @@ class FormulaInstaller
     if formula.name == "curl" &&
        !DevelopmentTools.curl_handles_most_https_certificates?
       ENV["HOMEBREW_CURL"] = formula.opt_bin/"curl"
+      Utils::Curl.clear_path_cache
     end
 
     caveats
@@ -876,6 +858,11 @@ class FormulaInstaller
     args << "--cc=#{@cc}" if @cc
     args << "--keep-tmp" if keep_tmp?
 
+    if debug_symbols?
+      args << "--debug-symbols"
+      args << "--build-from-source"
+    end
+
     if @env.present?
       args << "--env=#{@env}"
     elsif formula.env.std? || formula.deps.select(&:build?).any? { |d| d.name == "scons" }
@@ -914,7 +901,7 @@ class FormulaInstaller
         sandbox = Sandbox.new
         formula.logs.mkpath
         sandbox.record_log(formula.logs/"build.sandbox.log")
-        sandbox.allow_write_path(ENV["HOME"]) if interactive?
+        sandbox.allow_write_path(Dir.home) if interactive?
         sandbox.allow_write_temp_and_cache
         sandbox.allow_write_log(formula)
         sandbox.allow_cvs
@@ -1094,12 +1081,12 @@ class FormulaInstaller
 
   sig { void }
   def post_install
-    args = %W[
-      nice #{RUBY_PATH}
-      #{ENV["HOMEBREW_RUBY_WARNINGS"]}
-      -I #{$LOAD_PATH.join(File::PATH_SEPARATOR)}
-      --
-      #{HOMEBREW_LIBRARY_PATH}/postinstall.rb
+    args = [
+      "nice",
+      *HOMEBREW_RUBY_EXEC_ARGS,
+      "-I", $LOAD_PATH.join(File::PATH_SEPARATOR),
+      "--",
+      HOMEBREW_LIBRARY_PATH/"postinstall.rb"
     ]
 
     # Use the formula from the keg if:
@@ -1178,6 +1165,8 @@ class FormulaInstaller
 
     if pour_bottle?(output_warning: true)
       formula.fetch_bottle_tab
+    elsif formula.core_formula? && Homebrew::EnvConfig.install_from_api?
+      odie "Unable to build #{formula.name} from source with HOMEBREW_INSTALL_FROM_API."
     else
       formula.fetch_patches
       formula.resources.each(&:fetch)
@@ -1213,6 +1202,7 @@ class FormulaInstaller
     tab.unused_options = []
     tab.built_as_bottle = true
     tab.poured_from_bottle = true
+    tab.loaded_from_api = formula.class.loaded_from_api
     tab.installed_as_dependency = installed_as_dependency?
     tab.installed_on_request = installed_on_request?
     tab.time = Time.now.to_i
@@ -1228,6 +1218,16 @@ class FormulaInstaller
     keg = Keg.new(formula.prefix)
     skip_linkage = formula.bottle_specification.skip_relocation?
     keg.replace_placeholders_with_locations tab.changed_files, skip_linkage: skip_linkage
+
+    cellar = formula.bottle_specification.tag_to_cellar(Utils::Bottles.tag)
+    return if [:any, :any_skip_relocation].include?(cellar)
+
+    prefix = Pathname(cellar).parent.to_s
+    return if cellar == HOMEBREW_CELLAR.to_s && prefix == HOMEBREW_PREFIX.to_s
+
+    return unless ENV["HOMEBREW_RELOCATE_BUILD_PREFIX"]
+
+    keg.relocate_build_prefix(keg, prefix, HOMEBREW_PREFIX)
   end
 
   sig { params(output: T.nilable(String)).void }

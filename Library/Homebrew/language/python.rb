@@ -26,7 +26,7 @@ module Language
     end
 
     def self.each_python(build, &block)
-      original_pythonpath = ENV["PYTHONPATH"]
+      original_pythonpath = ENV.fetch("PYTHONPATH", nil)
       pythons = { "python@3" => "python3",
                   "pypy"     => "pypy",
                   "pypy3"    => "pypy3" }
@@ -70,7 +70,7 @@ module Language
       quiet_system python, "-c", script
     end
 
-    def self.setup_install_args(prefix)
+    def self.setup_install_args(prefix, python = "python3")
       shim = <<~PYTHON
         import setuptools, tokenize
         __file__ = 'setup.py'
@@ -84,6 +84,7 @@ module Language
         install
         --prefix=#{prefix}
         --install-scripts=#{prefix}/bin
+        --install-lib=#{prefix/site_packages(python)}
         --single-version-externally-managed
         --record=installed.txt
       ]
@@ -102,15 +103,22 @@ module Language
         )
       end
 
-      def detected_python_shebang(formula = self)
-        python_deps = formula.deps.map(&:name).grep(/^python(@.*)?$/)
+      def detected_python_shebang(formula = self, use_python_from_path: false)
+        python_path = if use_python_from_path
+          "/usr/bin/env python3"
+        else
+          python_deps = formula.deps.map(&:name).grep(/^python(@.*)?$/)
 
-        raise ShebangDetectionError.new("Python", "formula does not depend on Python") if python_deps.empty?
-        if python_deps.length > 1
-          raise ShebangDetectionError.new("Python", "formula has multiple Python dependencies")
+          raise ShebangDetectionError.new("Python", "formula does not depend on Python") if python_deps.empty?
+          if python_deps.length > 1
+            raise ShebangDetectionError.new("Python", "formula has multiple Python dependencies")
+          end
+
+          python_dep = python_deps.first
+          Formula[python_dep].opt_bin/python_dep.sub("@", "")
         end
 
-        python_shebang_rewrite_info(Formula[python_deps.first].opt_bin/"python3")
+        python_shebang_rewrite_info(python_path)
       end
     end
 

@@ -38,6 +38,8 @@
 
 # Unignore vendored gems
 !**/vendor/bundle/ruby/*/gems/*/lib
+!**/vendor/bundle/ruby/*/gems/addressable-*/data
+!**/vendor/bundle/ruby/*/gems/public_suffix-*/data
 !**/vendor/bundle/ruby/*/gems/rubocop-performance-*/config
 !**/vendor/bundle/ruby/*/gems/rubocop-rails-*/config
 !**/vendor/bundle/ruby/*/gems/rubocop-rspec-*/config
@@ -148,8 +150,7 @@
 **/vendor/bundle/ruby/*/gems/simplecov-*/
 **/vendor/bundle/ruby/*/gems/simplecov-html-*/
 **/vendor/bundle/ruby/*/gems/sorbet-*/
-**/vendor/bundle/ruby/*/gems/sorbet-runtime-*/
-!**/vendor/bundle/ruby/*/gems/sorbet-runtime-stub-*/
+!**/vendor/bundle/ruby/*/gems/sorbet-runtime-*/
 **/vendor/bundle/ruby/*/gems/spoom-*/
 **/vendor/bundle/ruby/*/gems/stackprof-*/
 **/vendor/bundle/ruby/*/gems/strscan-*/
@@ -181,6 +182,7 @@
 /docs/bin
 /docs/.jekyll-metadata
 /docs/vendor
+/docs/Gemfile.lock
 
 # Unignore our root-level metadata files.
 !/.dockerignore

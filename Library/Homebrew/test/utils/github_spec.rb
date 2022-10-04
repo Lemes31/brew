@@ -15,19 +15,19 @@ describe GitHub do
     end
   end
 
-  describe "::query_string" do
+  describe "::search_query_string" do
     it "builds a query with the given hash parameters formatted as key:value" do
-      query = described_class.query_string(user: "Homebrew", repo: "brew")
+      query = described_class.search_query_string(user: "Homebrew", repo: "brew")
       expect(query).to eq("q=user%3AHomebrew+repo%3Abrew&per_page=100")
     end
 
     it "adds a variable number of top-level string parameters to the query when provided" do
-      query = described_class.query_string("value1", "value2", user: "Homebrew")
+      query = described_class.search_query_string("value1", "value2", user: "Homebrew")
       expect(query).to eq("q=value1+value2+user%3AHomebrew&per_page=100")
     end
 
     it "turns array values into multiple key:value parameters" do
-      query = described_class.query_string(user: ["Homebrew", "caskroom"])
+      query = described_class.search_query_string(user: ["Homebrew", "caskroom"])
       expect(query).to eq("q=user%3AHomebrew+user%3Acaskroom&per_page=100")
     end
   end
@@ -57,34 +57,26 @@ describe GitHub do
     end
   end
 
-  describe "::sponsors_by_tier", :needs_network do
-    it "errors on an unauthenticated token" do
-      expect {
-        described_class.sponsors_by_tier("Homebrew")
-      }.to raise_error(/INSUFFICIENT_SCOPES|FORBIDDEN|token needs the 'admin:org' scope/)
-    end
-  end
-
   describe "::get_artifact_url", :needs_network do
     it "fails to find a nonexistent workflow" do
       expect {
         described_class.get_artifact_url(
-          described_class.get_workflow_run("Homebrew", "homebrew-core", 1),
+          described_class.get_workflow_run("Homebrew", "homebrew-core", "1"),
         )
-      }.to raise_error(/No matching workflow run found/)
+      }.to raise_error(/No matching check suite found/)
     end
 
     it "fails to find artifacts that don't exist" do
       expect {
         described_class.get_artifact_url(
-          described_class.get_workflow_run("Homebrew", "homebrew-core", 79751, artifact_name: "false_bottles"),
+          described_class.get_workflow_run("Homebrew", "homebrew-core", "79751", artifact_name: "false_bottles"),
         )
       }.to raise_error(/No artifact .+ was found/)
     end
 
     it "gets an artifact link" do
       url = described_class.get_artifact_url(
-        described_class.get_workflow_run("Homebrew", "homebrew-core", 79751, artifact_name: "bottles"),
+        described_class.get_workflow_run("Homebrew", "homebrew-core", "79751", artifact_name: "bottles"),
       )
       expect(url).to eq("https://api.github.com/repos/Homebrew/homebrew-core/actions/artifacts/70494047/zip")
     end

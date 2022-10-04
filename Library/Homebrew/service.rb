@@ -18,12 +18,19 @@ module Homebrew
     PROCESS_TYPE_INTERACTIVE = :interactive
     PROCESS_TYPE_ADAPTIVE = :adaptive
 
+    KEEP_ALIVE_KEYS = [:always, :successful_exit, :crashed, :path].freeze
+
     # sig { params(formula: Formula).void }
     def initialize(formula, &block)
       @formula = formula
       @run_type = RUN_TYPE_IMMEDIATE
       @environment_variables = {}
       @service_block = block
+    end
+
+    sig { returns(Formula) }
+    def f
+      @formula
     end
 
     sig { params(command: T.nilable(T.any(T::Array[String], String, Pathname))).returns(T.nilable(Array)) }
@@ -100,15 +107,41 @@ module Homebrew
       end
     end
 
-    sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
+    sig {
+      params(value: T.nilable(T.any(T::Boolean, T::Hash[Symbol, T.untyped])))
+        .returns(T.nilable(T::Hash[Symbol, T.untyped]))
+    }
     def keep_alive(value = nil)
       case T.unsafe(value)
       when nil
         @keep_alive
       when true, false
+        @keep_alive = { always: value }
+      when Hash
+        hash = T.cast(value, Hash)
+        unless (hash.keys - KEEP_ALIVE_KEYS).empty?
+          raise TypeError, "Service#keep_alive allows only #{KEEP_ALIVE_KEYS}"
+        end
+
         @keep_alive = value
       else
-        raise TypeError, "Service#keep_alive expects a Boolean"
+        raise TypeError, "Service#keep_alive expects a Boolean or Hash"
+      end
+    end
+
+    sig { params(value: T.nilable(String)).returns(T.nilable(T::Hash[Symbol, String])) }
+    def sockets(value = nil)
+      case T.unsafe(value)
+      when nil
+        @sockets
+      when String
+        match = T.must(value).match(%r{([a-z]+)://([a-z0-9.]+):([0-9]+)}i)
+        raise TypeError, "Service#sockets a formatted socket definition as <type>://<host>:<port>" if match.blank?
+
+        type, host, port = match.captures
+        @sockets = { host: host, port: port, type: type }
+      else
+        raise TypeError, "Service#sockets expects a String"
       end
     end
 
@@ -117,7 +150,7 @@ module Homebrew
     sig { returns(T::Boolean) }
     def keep_alive?
       instance_eval(&@service_block)
-      @keep_alive == true
+      @keep_alive.present? && @keep_alive[:always] != false
     end
 
     sig { params(value: T.nilable(T::Boolean)).returns(T.nilable(T::Boolean)) }
@@ -152,8 +185,8 @@ module Homebrew
       when :background, :standard, :interactive, :adaptive
         @process_type = value
       when Symbol
-        raise TypeError, "Service#process_type allows: "\
-                         "'#{PROCESS_TYPE_BACKGROUND}'/'#{PROCESS_TYPE_STANDARD}'/"\
+        raise TypeError, "Service#process_type allows: " \
+                         "'#{PROCESS_TYPE_BACKGROUND}'/'#{PROCESS_TYPE_STANDARD}'/" \
                          "'#{PROCESS_TYPE_INTERACTIVE}'/'#{PROCESS_TYPE_ADAPTIVE}'"
       else
         raise TypeError, "Service#process_type expects a Symbol"
@@ -310,7 +343,6 @@ module Homebrew
         RunAtLoad:        @run_type == RUN_TYPE_IMMEDIATE,
       }
 
-      base[:KeepAlive] = @keep_alive if @keep_alive == true
       base[:LaunchOnlyOnce] = @launch_only_once if @launch_only_once == true
       base[:LegacyTimers] = @macos_legacy_timers if @macos_legacy_timers == true
       base[:TimeOut] = @restart_delay if @restart_delay.present?
@@ -323,9 +355,39 @@ module Homebrew
       base[:StandardErrorPath] = @error_log_path if @error_log_path.present?
       base[:EnvironmentVariables] = @environment_variables unless @environment_variables.empty?
 
+      if keep_alive?
+        if (always = @keep_alive[:always].presence)
+          base[:KeepAlive] = always
+        elsif @keep_alive.key?(:successful_exit)
+          base[:KeepAlive] = { SuccessfulExit: @keep_alive[:successful_exit] }
+        elsif @keep_alive.key?(:crashed)
+          base[:KeepAlive] = { Crashed: @keep_alive[:crashed] }
+        elsif @keep_alive.key?(:path) && @keep_alive[:path].present?
+          base[:KeepAlive] = { PathState: @keep_alive[:path].to_s }
+        end
+      end
+
+      if @sockets.present?
+        base[:Sockets] = {}
+        base[:Sockets][:Listeners] = {
+          SockNodeName:    @sockets[:host],
+          SockServiceName: @sockets[:port],
+          SockProtocol:    @sockets[:type].upcase,
+          SockFamily:      "IPv4v6",
+        }
+      end
+
       if @cron.present? && @run_type == RUN_TYPE_CRON
         base[:StartCalendarInterval] = @cron.reject { |_, value| value == "*" }
       end
+
+      # Adding all session types has as the primary effect that if you initialise it through e.g. a Background session
+      # and you later "physically" sign in to the owning account (Aqua session), things shouldn't flip out.
+      # Also, we're not checking @process_type here because that is used to indicate process priority and not
+      # necessarily if it should run in a specific session type. Like database services could run with ProcessType
+      # Interactive so they have no resource limitations enforced upon them, but they aren't really interactive in the
+      # general sense.
+      base[:LimitLoadToSessionType] = %w[Aqua Background LoginWindow StandardIO System]
 
       base.to_plist
     end
@@ -348,9 +410,10 @@ module Homebrew
       cmd = command.join(" ")
 
       options = []
-      options << "Type=#{@launch_only_once == true ? "oneshot" : "simple"}"
+      options << "Type=#{(@launch_only_once == true) ? "oneshot" : "simple"}"
       options << "ExecStart=#{cmd}"
-      options << "Restart=always" if @keep_alive == true
+
+      options << "Restart=always" if @keep_alive.present? && @keep_alive[:always].present?
       options << "RestartSec=#{restart_delay}" if @restart_delay.present?
       options << "WorkingDirectory=#{@working_dir}" if @working_dir.present?
       options << "RootDirectory=#{@root_dir}" if @root_dir.present?
@@ -383,8 +446,8 @@ module Homebrew
       options << "OnUnitActiveSec=#{@interval}" if @run_type == RUN_TYPE_INTERVAL
 
       if @run_type == RUN_TYPE_CRON
-        minutes = @cron[:Minute] == "*" ? "*" : format("%02d", @cron[:Minute])
-        hours   = @cron[:Hour] == "*" ? "*" : format("%02d", @cron[:Hour])
+        minutes = (@cron[:Minute] == "*") ? "*" : format("%02d", @cron[:Minute])
+        hours   = (@cron[:Hour] == "*") ? "*" : format("%02d", @cron[:Hour])
         options << "OnCalendar=#{@cron[:Weekday]}-*-#{@cron[:Month]}-#{@cron[:Day]} #{hours}:#{minutes}:00"
       end
 

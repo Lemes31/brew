@@ -7,15 +7,15 @@ require "formula"
 describe Cleaner do
   include FileUtils
 
-  subject(:cleaner) { described_class.new(f) }
-
-  let(:f) { formula("cleaner_test") { url "foo-1.0" } }
-
-  before do
-    f.prefix.mkpath
-  end
-
   describe "#clean" do
+    subject(:cleaner) { described_class.new(f) }
+
+    let(:f) { formula("cleaner_test") { url "foo-1.0" } }
+
+    before do
+      f.prefix.mkpath
+    end
+
     it "cleans files" do
       f.bin.mkpath
       f.lib.mkpath
@@ -96,7 +96,7 @@ describe Cleaner do
     it "removes '.la' files" do
       file = f.lib/"foo.la"
 
-      f.lib.mkpath
+      file.dirname.mkpath
       touch file
 
       cleaner.clean
@@ -107,7 +107,7 @@ describe Cleaner do
     it "removes 'perllocal' files" do
       file = f.lib/"perl5/darwin-thread-multi-2level/perllocal.pod"
 
-      (f.lib/"perl5/darwin-thread-multi-2level").mkpath
+      file.dirname.mkpath
       touch file
 
       cleaner.clean
@@ -118,7 +118,7 @@ describe Cleaner do
     it "removes '.packlist' files" do
       file = f.lib/"perl5/darwin-thread-multi-2level/auto/test/.packlist"
 
-      (f.lib/"perl5/darwin-thread-multi-2level/auto/test").mkpath
+      file.dirname.mkpath
       touch file
 
       cleaner.clean
@@ -129,55 +129,84 @@ describe Cleaner do
     it "removes 'charset.alias' files" do
       file = f.lib/"charset.alias"
 
-      f.lib.mkpath
+      file.dirname.mkpath
       touch file
 
       cleaner.clean
 
       expect(file).not_to exist
     end
+
+    it "removes 'info/**/dir' files except for 'info/<name>/dir'" do
+      file = f.info/"dir"
+      arch_file = f.info/"i686-elf/dir"
+      name_file = f.info/f.name/"dir"
+
+      file.dirname.mkpath
+      arch_file.dirname.mkpath
+      name_file.dirname.mkpath
+
+      touch file
+      touch arch_file
+      touch name_file
+
+      cleaner.clean
+
+      expect(file).not_to exist
+      expect(arch_file).not_to exist
+      expect(name_file).to exist
+    end
   end
 
   describe "::skip_clean" do
+    def stub_formula_skip_clean(skip_paths)
+      formula("cleaner_test") do
+        url "foo-1.0"
+
+        skip_clean skip_paths
+      end
+    end
+
     it "adds paths that should be skipped" do
-      f.class.skip_clean "bin"
+      f = stub_formula_skip_clean("bin")
       f.bin.mkpath
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(f.bin).to be_a_directory
     end
 
     it "also skips empty sub-directories under the added paths" do
-      f.class.skip_clean "bin"
+      f = stub_formula_skip_clean("bin")
       subdir = f.bin/"subdir"
       subdir.mkpath
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(f.bin).to be_a_directory
       expect(subdir).to be_a_directory
     end
 
     it "allows skipping broken symlinks" do
-      f.class.skip_clean "symlink"
+      f = stub_formula_skip_clean("symlink")
+      f.prefix.mkpath
       symlink = f.prefix/"symlink"
       ln_s "target", symlink
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(symlink).to be_a_symlink
     end
 
     it "allows skipping symlinks pointing to an empty directory" do
-      f.class.skip_clean "c"
+      f = stub_formula_skip_clean("c")
       dir = f.prefix/"b"
       symlink = f.prefix/"c"
 
       dir.mkpath
       ln_s dir.basename, symlink
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(dir).not_to exist
       expect(symlink).to be_a_symlink
@@ -185,14 +214,14 @@ describe Cleaner do
     end
 
     it "allows skipping symlinks whose target was pruned before" do
-      f.class.skip_clean "a"
+      f = stub_formula_skip_clean("a")
       dir = f.prefix/"b"
       symlink = f.prefix/"a"
 
       dir.mkpath
       ln_s dir.basename, symlink
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(dir).not_to exist
       expect(symlink).to be_a_symlink
@@ -200,37 +229,40 @@ describe Cleaner do
     end
 
     it "allows skipping '.la' files" do
+      f = stub_formula_skip_clean(:la)
+
       file = f.lib/"foo.la"
 
-      f.class.skip_clean :la
       f.lib.mkpath
       touch file
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(file).to exist
     end
 
     it "allows skipping sub-directories" do
+      f = stub_formula_skip_clean("lib/subdir")
+
       dir = f.lib/"subdir"
-      f.class.skip_clean "lib/subdir"
 
       dir.mkpath
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(dir).to be_a_directory
     end
 
     it "allows skipping paths relative to prefix" do
+      f = stub_formula_skip_clean("bin/a")
+
       dir1 = f.bin/"a"
       dir2 = f.lib/"bin/a"
 
-      f.class.skip_clean "bin/a"
       dir1.mkpath
       dir2.mkpath
 
-      cleaner.clean
+      described_class.new(f).clean
 
       expect(dir1).to exist
       expect(dir2).not_to exist

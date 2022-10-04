@@ -25,6 +25,17 @@ export HOMEBREW_CORE_GIT_REMOTE="..."  # put your Git mirror of Homebrew/homebre
 
 The default Git remote will be used if the corresponding environment variable is unset.
 
+## Skip Tap Cloning (beta)
+
+You can instruct Homebrew to skip cloning the Homebrew/homebrew-core tap during installation by setting the beta `HOMEBREW_INSTALL_FROM_API` environment variable with the following:
+
+```bash
+export HOMEBREW_INSTALL_FROM_API=1
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install.sh)"
+```
+
+This will make Homebrew install formulae and casks in homebrew/core and homebrew/cask taps using Homebrew’s API instead of local checkouts of these repositories.
+
 ## Alternative Installs
 
 ### Linux or Windows 10 Subsystem for Linux
@@ -73,7 +84,7 @@ Uninstallation is documented in the [FAQ](FAQ.md).
 
 <a name="1"><sup>1</sup></a> For 32-bit or PPC support see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
 
-<a name="2"><sup>2</sup></a> 10.15 or higher is recommended, while 10.10–10.14 are supported on a best-effort basis. For 10.4–10.6 see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
+<a name="2"><sup>2</sup></a> 10.15 or higher is recommended, while 10.11–10.14 are supported on a best-effort basis. For 10.4–10.6 see [Tigerbrew](https://github.com/mistydemeo/tigerbrew).
 
 <a name="3"><sup>3</sup></a> Most formulae require a compiler. A handful require a full Xcode installation. You can install Xcode, the CLT, or both; Homebrew supports all three configurations. Downloading Xcode may require an Apple Developer account on older versions of Mac OS X. Sign up for free at [Apple's website](https://developer.apple.com/register/index.action).
 

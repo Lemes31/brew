@@ -13,6 +13,10 @@ module Cask
         [:switch, "--skip-cask-deps", {
           description: "Skip installing cask dependencies.",
         }],
+        [:switch, "--zap", {
+          description: "For use with `brew reinstall --cask`. Remove all files associated with a cask. " \
+                       "*May remove files which are shared between applications.*",
+        }],
       ].freeze
 
       def self.parser(&block)
@@ -39,6 +43,7 @@ module Cask
           require_sha:    args.require_sha?,
           quarantine:     args.quarantine?,
           quiet:          args.quiet?,
+          zap:            args.zap?,
         )
       end
 
@@ -50,7 +55,9 @@ module Cask
         skip_cask_deps: nil,
         require_sha: nil,
         quarantine: nil,
-        quiet: nil
+        quiet: nil,
+        zap: nil,
+        dry_run: nil
       )
         odie "Installing casks is supported only on macOS" unless OS.mac?
 
@@ -61,9 +68,32 @@ module Cask
           skip_cask_deps: skip_cask_deps,
           require_sha:    require_sha,
           quarantine:     quarantine,
+          quiet:          quiet,
+          zap:            zap,
         }.compact
 
         options[:quarantine] = true if options[:quarantine].nil?
+
+        if dry_run
+          if (casks_to_install = casks.reject(&:installed?).presence)
+            plural = "cask".pluralize(casks_to_install.count)
+            ohai "Would install #{casks_to_install.count} #{plural}:"
+            puts casks_to_install.map(&:full_name).join(" ")
+          end
+          casks.each do |cask|
+            dep_names = CaskDependent.new(cask)
+                                     .runtime_dependencies
+                                     .reject(&:installed?)
+                                     .map(&:to_formula)
+                                     .map(&:name)
+            next if dep_names.blank?
+
+            plural = "dependency".pluralize(dep_names.count)
+            ohai "Would install #{dep_names.count} #{plural} for #{cask.full_name}:"
+            puts dep_names.join(" ")
+          end
+          return
+        end
 
         require "cask/installer"
 

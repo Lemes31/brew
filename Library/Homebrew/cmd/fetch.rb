@@ -13,6 +13,8 @@ module Homebrew
 
   module_function
 
+  FETCH_MAX_TRIES = 5
+
   sig { returns(CLI::Parser) }
   def fetch_args
     Homebrew::CLI::Parser.new do
@@ -20,18 +22,19 @@ module Homebrew
         Download a bottle (if available) or source packages for <formula>e
         and binaries for <cask>s. For files, also print SHA-256 checksums.
       EOS
-      flag "--bottle-tag",
+      flag "--bottle-tag=",
            description: "Download a bottle for given tag."
       switch "--HEAD",
              description: "Fetch HEAD version instead of stable version."
       switch "-f", "--force",
              description: "Remove a previously cached version and re-fetch."
       switch "-v", "--verbose",
-             description: "Do a verbose VCS checkout, if the URL represents a VCS. This is useful for "\
+             description: "Do a verbose VCS checkout, if the URL represents a VCS. This is useful for " \
                           "seeing if an existing VCS cache has been updated."
       switch "--retry",
-             description: "Retry if downloading fails or re-download if the checksum of a previously cached "\
-                          "version no longer matches."
+             description: "Retry if downloading fails or re-download if the checksum of a previously cached " \
+                          "version no longer matches. Tries at most #{FETCH_MAX_TRIES} times with " \
+                          "exponential backoff."
       switch "--deps",
              description: "Also download dependencies for any listed <formula>."
       switch "-s", "--build-from-source",
@@ -39,7 +42,7 @@ module Homebrew
       switch "--build-bottle",
              description: "Download source packages (for eventual bottling) rather than a bottle."
       switch "--force-bottle",
-             description: "Download a bottle if it exists for the current or newest version of macOS, "\
+             description: "Download a bottle if it exists for the current or newest version of macOS, " \
                           "even if it would not be used during installation."
       switch "--[no-]quarantine",
              description: "Disable/enable quarantining of downloads (default: enabled).",
@@ -159,10 +162,17 @@ module Homebrew
   end
 
   def retry_fetch?(f, args:)
-    @fetch_failed ||= Set.new
-    if args.retry? && @fetch_failed.add?(f)
-      ohai "Retrying download"
+    @fetch_tries ||= Hash.new { |h, k| h[k] = 1 }
+    if args.retry? && (@fetch_tries[f] < FETCH_MAX_TRIES)
+      wait = 2 ** @fetch_tries[f]
+      remaining = FETCH_MAX_TRIES - @fetch_tries[f]
+      what = "try".pluralize(remaining)
+
+      ohai "Retrying download in #{wait}s... (#{remaining} #{what} left)"
+      sleep wait
+
       f.clear_cache
+      @fetch_tries[f] += 1
       true
     else
       Homebrew.failed = true
