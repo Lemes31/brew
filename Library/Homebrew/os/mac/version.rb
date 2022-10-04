@@ -26,7 +26,7 @@ module OS
       OLDEST_SUPPORTED = "10.15"
       private_constant :OLDEST_SUPPORTED
 
-      OLDEST_ALLOWED = "10.11"
+      OLDEST_ALLOWED = "10.10"
 
       sig { params(version: Symbol).returns(T.attached_class) }
       def self.from_symbol(version)
