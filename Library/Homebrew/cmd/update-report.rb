@@ -183,6 +183,8 @@ module Homebrew
         Settings.write "linuxbrewmigrated", true
       end
 
+      next if tap.git_repo.origin_url
+
       begin
         reporter = Reporter.new(tap)
       rescue Reporter::ReporterRevisionUnsetError => e
